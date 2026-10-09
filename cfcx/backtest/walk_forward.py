@@ -61,7 +61,6 @@ def check_outcome(top_market: dict | None, match: Match) -> int | None:
     market_id = top_market["market_id"]
     real_total = match.home_corners + match.away_corners
 
-    # Parse market_id : T1_O5.5, T2_U6.5, TT_O9.5, MC_T1_O5.5_TO9.5
     try:
         if market_id.startswith("T1_"):
             return _check_team(match.home_corners, market_id)
@@ -85,7 +84,7 @@ def _line_to_int(line_str: str) -> int:
 
 def _check_team(value: int, market_id: str) -> int:
     parts = market_id.split("_")
-    direction = parts[1][0]  # 'O' or 'U'
+    direction = parts[1][0]
     line = parts[1][1:]
     threshold = _line_to_int(line)
     if direction == "O":
@@ -95,11 +94,10 @@ def _check_team(value: int, market_id: str) -> int:
 
 def _check_multicorner(c1: int, c2: int, total: int,
                        market_id: str) -> int:
-    # Format : MC_T1_O5.5_TO9.5
     parts = market_id.split("_")
     team = parts[1]
-    team_part = parts[2]      # O5.5 ou U5.5
-    total_part = parts[3]     # TO9.5 ou TU9.5
+    team_part = parts[2]
+    total_part = parts[3]
 
     team_value = c1 if team == "T1" else c2
 
@@ -132,15 +130,23 @@ def run_walk_forward(s, league: str,
     results = []
 
     for i, m in enumerate(matches):
-        if verbose:
-            print(f"[{i+1}/{len(matches)}] {m.home_team} vs {m.away_team} "
-                  f"({m.date.date()})")
         try:
             r = evaluate_match(s, m, n_simulations=n_simulations)
             results.append(r)
+
+            if verbose:
+                top_id = r["top_market_id"] or "-"
+                top_p = r["top_prob"]
+                p_str = f"{top_p:.3f}" if top_p is not None else "-"
+                print(
+                    f"[{i+1}/{len(matches)}] {m.home_team} vs {m.away_team} "
+                    f"| {r['decision']:6s} | top={top_id:22s} | "
+                    f"p={p_str} | {r['reason']}"
+                )
         except Exception as e:
             if verbose:
-                print(f"  Erreur : {e}")
+                print(f"[{i+1}/{len(matches)}] {m.home_team} vs {m.away_team} "
+                      f"| ERROR : {e}")
             results.append({
                 "match_id": m.match_id,
                 "date": m.date.isoformat(),

@@ -1,0 +1,16 @@
+leagues:
+  - code: E0
+    name: Premier League
+  - code: SP1
+    name: La Liga
+  - code: I1
+    name: Serie A
+  - code: D1
+    name: Bundesliga
+  - code: F1
+    name: Ligue 1
+
+seasons:
+  - 2023-2024
+  - 2024-2025
+  - 2025-2026

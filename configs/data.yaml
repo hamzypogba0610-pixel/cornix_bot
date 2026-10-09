@@ -1,0 +1,8 @@
+source: football-data.co.uk
+base_url: https://www.football-data.co.uk/mmz4281
+output_dir: ./data/raw
+
+season_codes:
+  2023-2024: "2324"
+  2024-2025: "2425"
+  2025-2026: "2526"

@@ -1,0 +1,24 @@
+[project]
+name = "cfcx"
+version = "0.1.0"
+description = "Corner Fusion & Calibration eXtreme"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas",
+    "numpy",
+    "scipy",
+    "sqlalchemy",
+    "psycopg2-binary",
+    "pydantic",
+    "pyyaml",
+    "requests",
+    "fastapi",
+    "uvicorn[standard]",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["cfcx*"]

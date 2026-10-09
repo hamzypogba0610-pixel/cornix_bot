@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: cornix-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -e .
+    startCommand: uvicorn cfcx.serving.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cornix-db
+          property: connectionString
+
+databases:
+  - name: cornix-db
+    plan: free
+    databaseName: cfcx
+    user: cfcx

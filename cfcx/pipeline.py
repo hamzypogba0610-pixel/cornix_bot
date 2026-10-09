@@ -1,6 +1,5 @@
 from datetime import date
 
-from cfcx.config import data_config
 from cfcx.data.store import session as make_session
 from cfcx.features.corner_dna import corner_dna
 from cfcx.features.latent import league_prior, latent_force

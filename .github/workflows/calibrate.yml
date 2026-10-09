@@ -1,0 +1,46 @@
+name: Calibrate
+
+on:
+  workflow_dispatch:
+    inputs:
+      league:
+        description: "Code ligue (E0, SP1, I1, D1, F1)"
+        required: true
+        default: "E0"
+      start:
+        description: "Date début (YYYY-MM-DD)"
+        required: true
+        default: "2024-08-01"
+      end:
+        description: "Date fin (YYYY-MM-DD)"
+        required: true
+        default: "2025-05-31"
+      limit:
+        description: "Nombre max de matchs"
+        required: true
+        default: "200"
+      sims:
+        description: "Simulations Monte Carlo par match"
+        required: true
+        default: "2000"
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - name: Run calibration
+        run: |
+          python scripts/calibrate.py \
+            --league "${{ github.event.inputs.league }}" \
+            --start "${{ github.event.inputs.start }}" \
+            --end "${{ github.event.inputs.end }}" \
+            --limit "${{ github.event.inputs.limit }}" \
+            --sims "${{ github.event.inputs.sims }}"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

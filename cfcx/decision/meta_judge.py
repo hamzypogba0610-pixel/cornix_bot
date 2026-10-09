@@ -4,10 +4,10 @@ from cfcx.markets.scorer import (
 
 
 DEFAULT_THRESHOLDS = {
-    "min_prob": 0.60,
-    "min_rob": 0.55,
-    "max_mdi": 0.15,
-    "min_mds": 0.05,
+    "min_prob": 0.55,
+    "min_rob": 0.40,
+    "max_mdi": 0.20,
+    "min_mds": 0.01,
 }
 
 

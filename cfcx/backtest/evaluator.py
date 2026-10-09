@@ -1,6 +1,18 @@
 import numpy as np
 
 
+def implied_odds(prob: float, margin: float = 0.05) -> float:
+    """Cote bookmaker réaliste dérivée d'une probabilité.
+
+    Fair odds = 1 / p
+    Bookmaker odds = fair odds * (1 - margin)
+    """
+    if prob <= 0 or prob >= 1:
+        return 1.0
+    fair = 1.0 / prob
+    return max(1.01, fair * (1.0 - margin))
+
+
 def summary(results: list[dict]) -> dict:
     """Calcule les métriques globales du backtest."""
     if not results:
@@ -34,23 +46,27 @@ def summary(results: list[dict]) -> dict:
     }
 
 
-def roi(results: list[dict], odds: float = 1.90) -> dict:
-    """Calcule le ROI simulé.
-
-    Hypothèse : cote moyenne `odds` pour tous les paris gagnants.
-    Profit par pari gagnant : (odds - 1) * stake
-    Perte par pari perdant : -stake
-    """
+def roi(results: list[dict], margin: float = 0.05) -> dict:
+    """ROI réaliste : la cote de chaque pari est dérivée de sa probabilité."""
     bets = [r for r in results if r.get("decision") == "BET"
-            and r.get("outcome") is not None]
+            and r.get("outcome") is not None
+            and r.get("top_prob") is not None]
     if not bets:
-        return {"roi": 0.0, "profit": 0.0, "n_bets": 0}
+        return {
+            "roi": 0.0, "profit": 0.0, "n_bets": 0,
+            "avg_odds": 0.0, "margin": margin,
+        }
 
     stake = 1.0
     profit = 0.0
+    total_odds = 0.0
+
     for r in bets:
+        p = r["top_prob"]
+        odds = implied_odds(p, margin)
+        total_odds += odds
         if r["outcome"] == 1:
-            profit += (odds - 1) * stake
+            profit += (odds - 1.0) * stake
         else:
             profit -= stake
 
@@ -61,17 +77,13 @@ def roi(results: list[dict], odds: float = 1.90) -> dict:
         "roi": float(roi_val),
         "profit": float(profit),
         "n_bets": len(bets),
-        "avg_odds": odds,
+        "avg_odds": float(total_odds / len(bets)),
+        "margin": margin,
     }
 
 
 def calibration_report(results: list[dict], n_bins: int = 10) -> dict:
-    """Vérifie la calibration des probabilités prédites.
-
-    Pour chaque intervalle de probabilité, on compare :
-    - la probabilité moyenne prédite
-    - le taux de réussite réel
-    """
+    """Vérifie la calibration des probabilités prédites."""
     bets = [r for r in results if r.get("decision") == "BET"
             and r.get("outcome") is not None
             and r.get("top_prob") is not None]
@@ -108,15 +120,9 @@ def calibration_report(results: list[dict], n_bins: int = 10) -> dict:
 
 def _empty_summary() -> dict:
     return {
-        "total_matches": 0,
-        "bet_count": 0,
-        "no_bet_count": 0,
-        "error_count": 0,
-        "no_bet_rate": 0.0,
-        "error_rate": 0.0,
-        "win_rate_on_bets": 0.0,
-        "wins": 0,
-        "losses": 0,
+        "total_matches": 0, "bet_count": 0, "no_bet_count": 0,
+        "error_count": 0, "no_bet_rate": 0.0, "error_rate": 0.0,
+        "win_rate_on_bets": 0.0, "wins": 0, "losses": 0,
     }
 
 
@@ -126,4 +132,4 @@ def full_report(results: list[dict]) -> dict:
         "summary": summary(results),
         "roi": roi(results),
         "calibration": calibration_report(results),
-  }
+    }

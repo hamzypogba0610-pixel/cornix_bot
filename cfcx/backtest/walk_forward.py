@@ -48,6 +48,7 @@ def evaluate_match(s, match: Match,
         "top_score": result["top"]["score"] if result["top"] else None,
         "real_c1": match.home_corners,
         "real_c2": match.away_corners,
+        "real_total": match.home_corners + match.away_corners,
         "outcome": outcome,
         "reason": result["reason"],
     }
@@ -138,10 +139,15 @@ def run_walk_forward(s, league: str,
                 top_id = r["top_market_id"] or "-"
                 top_p = r["top_prob"]
                 p_str = f"{top_p:.3f}" if top_p is not None else "-"
+                outcome_str = (
+                    "WIN" if r["outcome"] == 1
+                    else ("LOSS" if r["outcome"] == 0 else "-")
+                )
                 print(
                     f"[{i+1}/{len(matches)}] {m.home_team} vs {m.away_team} "
+                    f"| C1={r['real_c1']} C2={r['real_c2']} T={r['real_total']} "
                     f"| {r['decision']:6s} | top={top_id:22s} | "
-                    f"p={p_str} | {r['reason']}"
+                    f"p={p_str} | {outcome_str} | {r['reason']}"
                 )
         except Exception as e:
             if verbose:

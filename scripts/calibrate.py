@@ -7,8 +7,10 @@ from cfcx.calibration.trainer import (
     collect_pairs,
     train_and_evaluate,
     save_calibrator,
+    save_beta_calibrator,
 )
 from cfcx.calibration.isotonic import fit_isotonic
+from cfcx.calibration.beta import fit_beta
 
 
 def main():
@@ -53,21 +55,43 @@ def main():
 
         report = train_and_evaluate(probs, outcomes)
 
-        print()
-        print("=" * 50)
-        print("RAPPORT DE CALIBRATION")
-        print("=" * 50)
-        for k, v in report.items():
-            if isinstance(v, float):
-                print(f"  {k}: {v:.4f}")
-            else:
-                print(f"  {k}: {v}")
+        if "error" in report:
+            print(f"ERREUR : {report['error']}")
+            return
 
-        if "error" not in report and len(probs) >= 20:
-            iso = fit_isotonic(probs, outcomes)
-            save_calibrator(iso, args.output)
-            print()
-            print(f"Calibrateur sauvegardé dans : {args.output}")
+        print()
+        print("=" * 60)
+        print("COMPARAISON DES MÉTHODES DE CALIBRATION")
+        print("=" * 60)
+        print(f"  n_samples: {report['n_samples']}")
+        print(f"  n_train:   {report['n_train']}")
+        print(f"  n_test:    {report['n_test']}")
+        print()
+        print(f"  {'Métrique':<18} {'Raw':<12} {'Isotonic':<12} {'Beta':<12}")
+        print(f"  {'-' * 54}")
+
+        iso = report["isotonic"]
+        beta = report["beta"]
+
+        print(f"  {'ECE':<18} {iso['ece_raw']:<12.4f} "
+              f"{iso['ece']:<12.4f} {beta['ece']:<12.4f}")
+        print(f"  {'Brier':<18} {iso['brier_raw']:<12.4f} "
+              f"{iso['brier']:<12.4f} {beta['brier']:<12.4f}")
+        print(f"  {'LogLoss':<18} {iso['logloss_raw']:<12.4f} "
+              f"{iso['logloss']:<12.4f} {beta['logloss']:<12.4f}")
+
+        print()
+        print(f"  MEILLEURE MÉTHODE : {report['best_method'].upper()}")
+
+        # Sauvegarder la meilleure
+        if report["best_method"] == "beta":
+            params = fit_beta(probs, outcomes)
+            save_beta_calibrator(params, args.output)
+        else:
+            iso_model = fit_isotonic(probs, outcomes)
+            save_calibrator(iso_model, args.output)
+
+        print(f"  Calibrateur sauvegardé dans : {args.output}")
     finally:
         s.close()
 

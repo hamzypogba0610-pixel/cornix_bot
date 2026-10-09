@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Corner Fusion & Calibration eXtreme"
 requires-python = ">=3.11"
 dependencies = [
+    "scikit-learn",
     "pandas",
     "numpy",
     "scipy",

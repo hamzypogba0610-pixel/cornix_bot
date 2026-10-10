@@ -1,5 +1,6 @@
 import argparse
 from datetime import date
+from pathlib import Path
 
 from cfcx.data.store import session as make_session
 from cfcx.backtest.walk_forward import run_walk_forward
@@ -83,7 +84,6 @@ def main():
         print()
         print(f"  MEILLEURE MÉTHODE : {report['best_method'].upper()}")
 
-        # Sauvegarder la meilleure
         if report["best_method"] == "beta":
             params = fit_beta(probs, outcomes)
             save_beta_calibrator(params, args.output)
@@ -92,6 +92,17 @@ def main():
             save_calibrator(iso_model, args.output)
 
         print(f"  Calibrateur sauvegardé dans : {args.output}")
+
+        # Afficher le contenu du calibrateur pour copie manuelle
+        print()
+        print("=" * 60)
+        print("CONTENU DU CALIBRATEUR (à copier dans configs/calibrator.json)")
+        print("=" * 60)
+        try:
+            content = Path(args.output).read_text()
+            print(content)
+        except Exception as e:
+            print(f"Impossible de lire le fichier : {e}")
     finally:
         s.close()
 

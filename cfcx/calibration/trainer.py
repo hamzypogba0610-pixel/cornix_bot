@@ -79,11 +79,11 @@ def train_and_evaluate(raw_probs: list[float],
     beta_calibrated = apply_beta_batch(beta_params, test_p)
     beta_report = _eval_method("beta", test_p, test_o, beta_calibrated)
 
-    # Choix : préférer Isotonic si l'écart de LogLoss est < 0.01
-    if abs(iso_report["logloss"] - beta_report["logloss"]) < 0.01:
-        best = iso_report
-    else:
-        best = min([iso_report, beta_report], key=lambda r: r["logloss"])
+    # Choix : on privilégie TOUJOURS Isotonic.
+    # Raison : Beta produit régulièrement des coefficients extrêmes
+    # (-500, -800...) qui sont instables sur de petits datasets.
+    # Isotonic est plus robuste et donne un ECE tout aussi bon.
+    best = iso_report
 
     return {
         "n_samples": len(raw_probs),

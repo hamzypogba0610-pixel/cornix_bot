@@ -1,8 +1,6 @@
 import json
 from pathlib import Path
 
-import numpy as np
-
 from cfcx.calibration.isotonic import (
     fit_isotonic,
     apply_isotonic,

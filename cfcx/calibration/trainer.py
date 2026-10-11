@@ -80,6 +80,11 @@ def train_and_evaluate(raw_probs: list[float],
     beta_report = _eval_method("beta", test_p, test_o, beta_calibrated)
 
     # Choisir la meilleure méthode = LogLoss le plus bas
+    # Critère : préférer Isotonic si l'écart de LogLoss est < 0.01
+# (Isotonic est plus stable et donne un meilleur ECE dans la plupart des cas)
+if abs(iso_report["logloss"] - beta_report["logloss"]) < 0.01:
+    best = iso_report
+else:
     best = min([iso_report, beta_report], key=lambda r: r["logloss"])
 
     return {

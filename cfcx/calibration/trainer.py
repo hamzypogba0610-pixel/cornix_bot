@@ -15,7 +15,7 @@ from cfcx.calibration.beta import (
 
 
 def collect_pairs(results: list[dict]) -> tuple[list[float], list[int]]:
-    """Extrait les paires (probabilité prédite, résultat observé)."""
+    """Ancienne méthode : extrait uniquement le top marché de chaque match."""
     probs, outcomes = [], []
     for r in results:
         if r.get("top_prob") is None:
@@ -26,6 +26,27 @@ def collect_pairs(results: list[dict]) -> tuple[list[float], list[int]]:
             continue
         probs.append(float(r["top_prob"]))
         outcomes.append(int(r["outcome"]))
+    return probs, outcomes
+
+
+def collect_all_pairs(results: list[dict]) -> tuple[list[float], list[int]]:
+    """Nouvelle méthode : extrait TOUS les marchés de chaque match.
+
+    Utilise prob_raw (la probabilité BRUTE du modèle, avant calibration),
+    pour éviter le biais circulaire.
+    """
+    probs, outcomes = [], []
+    for r in results:
+        markets = r.get("all_markets", [])
+        for mk in markets:
+            p_raw = mk.get("prob_raw")
+            out = mk.get("outcome")
+            if p_raw is None or out is None:
+                continue
+            # Ne garder que les marchés dans la zone utile (0.30 - 0.95)
+            if 0.30 < p_raw < 0.95:
+                probs.append(float(p_raw))
+                outcomes.append(int(out))
     return probs, outcomes
 
 
@@ -46,7 +67,7 @@ def _eval_method(name: str, test_p: list[float], test_o: list[int],
 def train_and_evaluate(raw_probs: list[float],
                        outcomes: list[int],
                        train_ratio: float = 0.7) -> dict:
-    """Entraîne 2 calibrateurs (Isotonic + Beta) et compare leurs résultats."""
+    """Entraîne 2 calibrateurs (Isotonic + Beta) et compare."""
     if len(raw_probs) < 20:
         return {
             "error": "trop peu de données pour calibrer (minimum 20)",
@@ -78,9 +99,7 @@ def train_and_evaluate(raw_probs: list[float],
     beta_report = _eval_method("beta", test_p, test_o, beta_calibrated)
 
     # Choix : on privilégie TOUJOURS Isotonic.
-    # Raison : Beta produit régulièrement des coefficients extrêmes
-    # (-500, -800...) qui sont instables sur de petits datasets.
-    # Isotonic est plus robuste et donne un ECE tout aussi bon.
+    # Raison : Beta produit des coefficients extrêmes instables.
     best = iso_report
 
     return {

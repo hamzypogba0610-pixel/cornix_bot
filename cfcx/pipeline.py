@@ -130,8 +130,9 @@ def run(s, team1: str, team2: str, league: str,
             freshness_days=5.0,
             completeness=0.8,
         ))
-        # 9b. Exposer tous les marchés scorés pour le calibrateur
-all_markets = scored
+
+    # 9b. Exposer tous les marchés scorés pour le calibrateur
+    all_markets = scored
 
     # 10. Décision
     result = judge(scored)

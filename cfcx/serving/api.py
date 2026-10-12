@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -11,7 +11,7 @@ from cfcx.serving.templates import FORM_HTML
 
 
 app = FastAPI(title="CFC-X API", version="0.1.0")
-START_TIME = datetime.now(timezone.utc)
+START_TIME = datetime.now(UTC)
 
 
 class PredictRequest(BaseModel):
@@ -54,7 +54,7 @@ def home():
 
 @app.get("/health")
 def health():
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return {
         "status": "ok",
         "uptime_seconds": (now - START_TIME).total_seconds(),

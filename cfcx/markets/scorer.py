@@ -6,14 +6,24 @@ from cfcx.markets.metrics import (
 
 
 DEFAULT_WEIGHTS = {
-    "w_p": 1.0,
-    "w_rob": 0.8,
-    "w_cons": 0.5,
-    "w_dq": 0.4,
-    "w_ls": 0.3,
-    "w_fi": 0.6,
-    "w_mdi": 0.5,
+    "w_p": 0.40,
+    "w_edge": 1.00,
+    "w_rob": 0.50,
+    "w_cons": 0.30,
+    "w_dq": 0.20,
+    "w_ls": 0.20,
+    "w_fi": 0.50,
+    "w_mdi": 0.40,
 }
+
+
+def _edge(prob_calibrated: float, prob_raw: float) -> float:
+    """Edge = différence entre notre estimation calibrée et la brute.
+
+    Positif : on pense mieux que le bookmaker.
+    Négatif : le bookmaker est meilleur que nous.
+    """
+    return float(prob_calibrated - prob_raw)
 
 
 def score_market(market: dict,
@@ -28,11 +38,14 @@ def score_market(market: dict,
     if weights is None:
         weights = DEFAULT_WEIGHTS
 
-    p_base = market["prob"]
+    p_cal = market["prob"]
+    p_raw = market.get("prob_raw", p_cal)
+
+    edge_val = _edge(p_cal, p_raw)
 
     mdi_val = mdi(probabilities_by_model)
     fi_val = fi(probabilities_perturbed)
-    rob_val = robustness(probabilities_perturbed, p_base)
+    rob_val = robustness(probabilities_perturbed, p_cal)
     cons_val = consensus(probabilities_by_model)
     dq_val = data_quality(matches_played, freshness_days, completeness)
     ls_val = (
@@ -42,7 +55,8 @@ def score_market(market: dict,
     )
 
     score = (
-        weights["w_p"] * p_base
+        weights["w_p"] * p_cal
+        + weights["w_edge"] * max(0.0, edge_val)
         + weights["w_rob"] * rob_val
         + weights["w_cons"] * cons_val
         + weights["w_dq"] * dq_val
@@ -54,6 +68,7 @@ def score_market(market: dict,
     out = dict(market)
     out.update({
         "score": float(score),
+        "edge": float(edge_val),
         "mdi": float(mdi_val),
         "fi": float(fi_val),
         "rob": float(rob_val),
@@ -89,7 +104,7 @@ def market_dominance(ranked: list[dict]) -> dict:
 
 
 def group_by_family(ranked: list[dict]) -> dict:
-    """Regroupe les marchés par famille (team1, team2, total, multicorner)."""
+    """Regroupe les marchés par famille."""
     groups = {"team1": [], "team2": [], "total": [], "multicorner": []}
     for m in ranked:
         fam = m.get("family")

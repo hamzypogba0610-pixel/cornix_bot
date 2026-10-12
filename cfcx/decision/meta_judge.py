@@ -7,7 +7,7 @@ DEFAULT_THRESHOLDS = {
     "min_prob": 0.55,
     "min_rob": 0.40,
     "max_mdi": 0.20,
-    "min_mds": 0.01,
+    "min_mds": 0.005,
 }
 
 

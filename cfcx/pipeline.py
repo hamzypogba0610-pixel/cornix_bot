@@ -19,6 +19,11 @@ DEFAULT_RHO = 0.10
 DEFAULT_DISPERSION = 1.2
 CALIBRATOR_PATH = "configs/calibrator.json"
 
+# Avantage domicile : le domicile fait ~10% de corners en plus,
+# l'extérieur ~9% en moins. Total global préservé.
+HOME_BOOST = 1.10
+AWAY_FACTOR = 0.91
+
 
 _CALIBRATOR_CACHE = None
 
@@ -54,7 +59,11 @@ def _apply_calibration(prob: float) -> float:
 
 def run(s, team1: str, team2: str, league: str,
         match_date: date, n_simulations: int = 10000) -> dict:
-    """Pipeline complet pour un match."""
+    """Pipeline complet pour un match.
+
+    team1 = équipe à domicile
+    team2 = équipe à l'extérieur
+    """
     # 1. Prior et stats de la ligue
     prior = league_prior(s, league, match_date)
     lg_stats = league_stats(s, league, match_date)
@@ -77,6 +86,10 @@ def run(s, team1: str, team2: str, league: str,
     lam1 = m["expected_c1"]
     lam2 = m["expected_c2"]
 
+    # 5b. Avantage domicile
+    lam1 = lam1 * HOME_BOOST
+    lam2 = lam2 * AWAY_FACTOR
+
     # 6. Distribution jointe
     jd = joint_distribution(
         lam1=lam1, lam2=lam2,
@@ -96,7 +109,7 @@ def run(s, team1: str, team2: str, league: str,
         mk["prob_raw"] = mk["prob"]
         mk["prob"] = _apply_calibration(mk["prob_raw"])
 
-    # 9. Scoring (avec probabilités calibrées)
+    # 9. Scoring
     scored = []
     for mk in markets:
         p = mk["prob"]

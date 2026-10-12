@@ -37,15 +37,17 @@ def evaluate_match(s, match: Match,
 
     outcome = check_outcome(result["top"], match)
 
+    top = result["top"]
     return {
         "match_id": match.match_id,
         "date": match.date.isoformat(),
         "home_team": match.home_team,
         "away_team": match.away_team,
         "decision": result["decision"],
-        "top_market_id": result["top"]["market_id"] if result["top"] else None,
-        "top_prob": result["top"]["prob"] if result["top"] else None,
-        "top_score": result["top"]["score"] if result["top"] else None,
+        "top_market_id": top["market_id"] if top else None,
+        "top_prob": top["prob"] if top else None,
+        "top_prob_raw": top.get("prob_raw") if top else None,
+        "top_score": top["score"] if top else None,
         "real_c1": match.home_corners,
         "real_c2": match.away_corners,
         "real_total": match.home_corners + match.away_corners,
@@ -137,22 +139,26 @@ def run_walk_forward(s, league: str,
 
             if verbose:
                 top_id = r["top_market_id"] or "-"
-                top_p = r["top_prob"]
-                p_str = f"{top_p:.3f}" if top_p is not None else "-"
+                p_cal = r["top_prob"]
+                p_raw = r["top_prob_raw"]
+                p_cal_str = f"{p_cal:.3f}" if p_cal is not None else "-"
+                p_raw_str = f"{p_raw:.3f}" if p_raw is not None else "-"
                 outcome_str = (
                     "WIN" if r["outcome"] == 1
                     else ("LOSS" if r["outcome"] == 0 else "-")
                 )
                 print(
-                    f"[{i+1}/{len(matches)}] {m.home_team} vs {m.away_team} "
+                    f"[{i+1}/{len(matches)}] "
+                    f"{m.home_team} vs {m.away_team} "
                     f"| C1={r['real_c1']} C2={r['real_c2']} T={r['real_total']} "
                     f"| {r['decision']:6s} | top={top_id:22s} | "
-                    f"p={p_str} | {outcome_str} | {r['reason']}"
+                    f"raw={p_raw_str} cal={p_cal_str} | {outcome_str} | "
+                    f"{r['reason']}"
                 )
         except Exception as e:
             if verbose:
-                print(f"[{i+1}/{len(matches)}] {m.home_team} vs {m.away_team} "
-                      f"| ERROR : {e}")
+                print(f"[{i+1}/{len(matches)}] "
+                      f"{m.home_team} vs {m.away_team} | ERROR : {e}")
             results.append({
                 "match_id": m.match_id,
                 "date": m.date.isoformat(),

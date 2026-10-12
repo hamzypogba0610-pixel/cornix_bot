@@ -1,10 +1,12 @@
 from datetime import date
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from cfcx.data.store import session as make_session
 from cfcx.pipeline import run as run_pipeline
+from cfcx.serving.templates import FORM_HTML
 
 
 app = FastAPI(title="CFC-X API", version="0.1.0")
@@ -40,6 +42,11 @@ def _market_to_dict(m: dict | None) -> dict | None:
         "mdi": m.get("mdi"),
         "fi": m.get("fi"),
     }
+
+
+@app.get("/", response_class=HTMLResponse)
+def home():
+    return FORM_HTML
 
 
 @app.get("/health")
@@ -87,4 +94,4 @@ def predict(req: PredictRequest):
         "lam1": result.get("lam1"),
         "lam2": result.get("lam2"),
         "dominance": result.get("dominance", {}),
-    }
+                }

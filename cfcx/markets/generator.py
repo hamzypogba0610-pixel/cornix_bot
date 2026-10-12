@@ -3,8 +3,8 @@ import numpy as np
 
 DEFAULT_LINES = [3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5]
 
-MIN_PROB = 0.55
-MAX_PROB = 0.85
+MIN_PROB = 0.45
+MAX_PROB = 0.90
 
 
 def _line_to_int(line: float) -> int:

@@ -1,0 +1,200 @@
+FORM_HTML = """
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cornix — Prédiction Multi Corners</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0d1117; color: #e6edf3;
+    padding: 20px; line-height: 1.5;
+  }
+  .container { max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 6px; color: #58a6ff; }
+  .sub { font-size: 13px; color: #8b949e; margin-bottom: 22px; }
+  .card {
+    background: #161b22; border: 1px solid #30363d;
+    border-radius: 10px; padding: 18px; margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 14px; color: #58a6ff;
+    margin-bottom: 14px; text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  label {
+    display: block; font-size: 12px; color: #8b949e;
+    margin-bottom: 5px; margin-top: 10px;
+  }
+  label:first-of-type { margin-top: 0; }
+  input, select {
+    width: 100%; padding: 10px 12px;
+    background: #0d1117; border: 1px solid #30363d;
+    border-radius: 6px; color: #e6edf3; font-size: 14px;
+  }
+  input:focus, select:focus { outline: none; border-color: #58a6ff; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  button {
+    width: 100%; padding: 14px;
+    background: #238636; color: white; border: none;
+    border-radius: 8px; font-size: 15px; font-weight: 600;
+    cursor: pointer; margin-top: 8px;
+  }
+  button:active { background: #1a6e2a; }
+  #result { margin-top: 20px; display: none; }
+  .badge {
+    display: inline-block; padding: 4px 10px;
+    border-radius: 12px; font-size: 12px; font-weight: 600;
+  }
+  .bet { background: #238636; color: white; }
+  .nobet { background: #6e7681; color: white; }
+  .market {
+    background: #0d1117; border: 1px solid #30363d;
+    border-radius: 8px; padding: 12px; margin-bottom: 10px;
+  }
+  .market-title { font-weight: 600; color: #58a6ff; margin-bottom: 6px; }
+  .market-detail { font-size: 13px; color: #8b949e; }
+  .market-detail span { color: #e6edf3; }
+  .best { border-color: #238636; border-width: 2px; }
+  .loading {
+    text-align: center; padding: 20px;
+    color: #8b949e; font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🎯 Cornix</h1>
+  <p class="sub">Prédiction Multi Corners pré-match</p>
+
+  <form id="form" onsubmit="submitForm(event)">
+    <div class="card">
+      <h2>📋 Match</h2>
+      <label>Équipe 1 (domicile)</label>
+      <input name="home" placeholder="Ex: Liverpool" required>
+      <label>Équipe 2 (extérieur)</label>
+      <input name="away" placeholder="Ex: Arsenal" required>
+      <div class="row">
+        <div>
+          <label>Championnat</label>
+          <select name="league">
+            <option value="E0">Premier League</option>
+            <option value="SP1">La Liga</option>
+            <option value="I1">Serie A</option>
+            <option value="D1">Bundesliga</option>
+            <option value="F1">Ligue 1</option>
+          </select>
+        </div>
+        <div>
+          <label>Date</label>
+          <input name="date" type="date" required>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>⚙️ Options</h2>
+      <label>Simulations Monte Carlo</label>
+      <select name="n_simulations">
+        <option value="2000">Rapide (2000)</option>
+        <option value="5000" selected>Équilibré (5000)</option>
+        <option value="10000">Précis (10000)</option>
+      </select>
+    </div>
+
+    <button type="submit">🔍 ANALYSER LE MATCH</button>
+  </form>
+
+  <div id="result"></div>
+</div>
+
+<script>
+function fmtPct(x) {
+  if (x === null || x === undefined) return "—";
+  return (x * 100).toFixed(1) + "%";
+}
+
+function marketBlock(title, m, isBest) {
+  if (!m) return "";
+  const cls = isBest ? "market best" : "market";
+  return `
+    <div class="${cls}">
+      <div class="market-title">${title} — ${m.market_id}</div>
+      <div class="market-detail">
+        Probabilité : <span>${fmtPct(m.prob)}</span> |
+        Brute : <span>${fmtPct(m.prob_raw)}</span> |
+        Edge : <span>${fmtPct(m.edge)}</span><br>
+        Robustesse : <span>${fmtPct(m.rob)}</span> |
+        Score : <span>${m.score ? m.score.toFixed(3) : "—"}</span>
+      </div>
+    </div>
+  `;
+}
+
+function submitForm(e) {
+  e.preventDefault();
+  const form = e.target;
+  const data = {
+    home: form.home.value,
+    away: form.away.value,
+    league: form.league.value,
+    date: form.date.value,
+    n_simulations: parseInt(form.n_simulations.value)
+  };
+
+  const result = document.getElementById("result");
+  result.style.display = "block";
+  result.innerHTML = '<div class="loading">⏳ Analyse en cours... (10-20 secondes)</div>';
+
+  fetch("/predict", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(data)
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.detail) {
+      result.innerHTML = '<div class="card" style="color:#f85149">Erreur : ' + d.detail + '</div>';
+      return;
+    }
+
+    const decClass = d.decision === "BET" ? "bet" : "nobet";
+    let html = '<div class="card">';
+    html += '<h2>' + d.team1 + ' vs ' + d.team2 + '</h2>';
+    html += '<div style="margin-bottom:12px"><span class="badge ' + decClass + '">' + d.decision + '</span></div>';
+    html += '<div class="market-detail">' + d.reason + '</div>';
+    html += '</div>';
+
+    html += '<div class="card"><h2>🎯 Meilleur marché</h2>';
+    html += marketBlock("TOP", d.top, true);
+    html += '</div>';
+
+    html += '<div class="card"><h2>📊 Top par famille</h2>';
+    html += marketBlock("🏠 Équipe 1", d.top_per_family.team1, false);
+    html += marketBlock("✈️ Équipe 2", d.top_per_family.team2, false);
+    html += marketBlock("🏆 Total", d.top_per_family.total, false);
+    html += marketBlock("🎲 Multi Corner", d.top_per_family.multicorner, false);
+    html += '</div>';
+
+    html += '<div class="card"><h2>📈 Technique</h2>';
+    html += '<div class="market-detail">';
+    html += 'λ1 : <span>' + (d.lam1 ? d.lam1.toFixed(2) : "—") + '</span> | ';
+    html += 'λ2 : <span>' + (d.lam2 ? d.lam2.toFixed(2) : "—") + '</span><br>';
+    html += 'MDS : <span>' + (d.dominance.mds ? d.dominance.mds.toFixed(3) : "—") + '</span>';
+    html += '</div></div>';
+
+    result.innerHTML = html;
+  })
+  .catch(err => {
+    result.innerHTML = '<div class="card" style="color:#f85149">Erreur réseau : ' + err.message + '</div>';
+  });
+}
+
+document.querySelector('input[name="date"]').valueAsDate = new Date();
+</script>
+</body>
+</html>
+"""

@@ -2,11 +2,7 @@ import numpy as np
 
 
 def implied_odds(prob: float, margin: float = 0.05) -> float:
-    """Cote bookmaker réaliste dérivée d'une probabilité.
-
-    Fair odds = 1 / p
-    Bookmaker odds = fair odds * (1 - margin)
-    """
+    """Cote bookmaker réaliste dérivée d'une probabilité."""
     if prob <= 0 or prob >= 1:
         return 1.0
     fair = 1.0 / prob
@@ -47,10 +43,15 @@ def summary(results: list[dict]) -> dict:
 
 
 def roi(results: list[dict], margin: float = 0.05) -> dict:
-    """ROI réaliste : la cote de chaque pari est dérivée de sa probabilité."""
+    """ROI réaliste.
+
+    La cote vient de la probabilité BRUTE (ce que le bookmaker voit),
+    mais on parie si la probabilité CALIBRÉE nous donne un edge.
+    """
     bets = [r for r in results if r.get("decision") == "BET"
             and r.get("outcome") is not None
-            and r.get("top_prob") is not None]
+            and r.get("top_prob") is not None
+            and r.get("top_prob_raw") is not None]
     if not bets:
         return {
             "roi": 0.0, "profit": 0.0, "n_bets": 0,
@@ -62,8 +63,7 @@ def roi(results: list[dict], margin: float = 0.05) -> dict:
     total_odds = 0.0
 
     for r in bets:
-        p = r["top_prob"]
-        odds = implied_odds(p, margin)
+        odds = implied_odds(r["top_prob_raw"], margin)
         total_odds += odds
         if r["outcome"] == 1:
             profit += (odds - 1.0) * stake
@@ -132,4 +132,4 @@ def full_report(results: list[dict]) -> dict:
         "summary": summary(results),
         "roi": roi(results),
         "calibration": calibration_report(results),
-    }
+        }

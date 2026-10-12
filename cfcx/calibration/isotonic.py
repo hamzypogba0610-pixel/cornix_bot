@@ -23,7 +23,18 @@ def fit_isotonic(raw_probs: list[float],
 
 
 def apply_isotonic(iso: IsotonicRegression, raw_prob: float) -> float:
-    """Applique le calibrateur à une probabilité brute."""
+    """Applique le calibrateur, mais UNIQUEMENT dans sa zone d'entraînement.
+
+    Si la probabilité est en dehors, on la laisse inchangée (protection
+    contre l'extrapolation hasardeuse du calibrateur).
+    """
+    # Récupérer les bornes de la zone d'entraînement
+    if hasattr(iso, "X_thresholds_") and len(iso.X_thresholds_) > 0:
+        x_min = float(iso.X_thresholds_[0])
+        x_max = float(iso.X_thresholds_[-1])
+        if raw_prob < x_min or raw_prob > x_max:
+            return raw_prob
+
     val = float(iso.predict([raw_prob])[0])
     return max(0.0, min(1.0, val))
 

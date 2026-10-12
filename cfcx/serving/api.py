@@ -1,15 +1,17 @@
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+from sqlalchemy import func, select
 
-from cfcx.data.store import session as make_session
+from cfcx.data.store import Match, session as make_session
 from cfcx.pipeline import run as run_pipeline
 from cfcx.serving.templates import FORM_HTML
 
 
 app = FastAPI(title="CFC-X API", version="0.1.0")
+START_TIME = datetime.utcnow()
 
 
 class PredictRequest(BaseModel):
@@ -18,6 +20,7 @@ class PredictRequest(BaseModel):
     league: str
     date: str | None = None
     n_simulations: int = 5000
+    seed: int | None = 42
 
 
 def _parse_date(s: str | None) -> date:
@@ -51,7 +54,31 @@ def home():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "uptime_seconds": (datetime.utcnow() - START_TIME).total_seconds(),
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
+@app.get("/stats")
+def stats():
+    """Statistiques sur la base de données."""
+    s = make_session()
+    try:
+        total = s.execute(select(func.count(Match.match_id))).scalar() or 0
+        leagues = s.execute(
+            select(Match.league, func.count(Match.match_id))
+            .group_by(Match.league)
+        ).all()
+        return {
+            "total_matches": int(total),
+            "by_league": {lg: int(cnt) for lg, cnt in leagues},
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        s.close()
 
 
 @app.post("/predict")
@@ -73,6 +100,7 @@ def predict(req: PredictRequest):
             league=req.league,
             match_date=match_date,
             n_simulations=req.n_simulations,
+            seed=req.seed,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -93,5 +121,6 @@ def predict(req: PredictRequest):
         },
         "lam1": result.get("lam1"),
         "lam2": result.get("lam2"),
+        "seed": result.get("seed"),
         "dominance": result.get("dominance", {}),
-                }
+    }

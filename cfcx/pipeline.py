@@ -153,6 +153,7 @@ all_markets = scored
     result["lam1"] = lam1
     result["lam2"] = lam2
     result["seed"] = seed
+result["all_markets"] = all_markets
 
     return result
 

@@ -5,13 +5,11 @@ from pathlib import Path
 from cfcx.data.store import session as make_session
 from cfcx.backtest.walk_forward import run_walk_forward
 from cfcx.calibration.trainer import (
-    collect_pairs,
+    collect_all_pairs,
     train_and_evaluate,
     save_calibrator,
-    save_beta_calibrator,
 )
 from cfcx.calibration.isotonic import fit_isotonic
-from cfcx.calibration.beta import fit_beta
 
 
 def main():
@@ -51,8 +49,15 @@ def main():
             verbose=False,
         )
 
-        probs, outcomes = collect_pairs(results)
-        print(f"Paires collectées : {len(probs)}")
+        probs, outcomes = collect_all_pairs(results)
+        print(f"Paires collectées (TOUS les marchés) : {len(probs)}")
+
+        if len(probs) > 0:
+            unique_p = sorted(set(round(p, 3) for p in probs))
+            print(f"Distribution des probas brutes : min={min(probs):.3f}, "
+                  f"max={max(probs):.3f}, "
+                  f"médiane={probs[len(probs)//2]:.3f}")
+            print(f"Valeurs uniques (arrondies) : {len(unique_p)}")
 
         report = train_and_evaluate(probs, outcomes)
 
@@ -84,16 +89,12 @@ def main():
         print()
         print(f"  MEILLEURE MÉTHODE : {report['best_method'].upper()}")
 
-        if report["best_method"] == "beta":
-            params = fit_beta(probs, outcomes)
-            save_beta_calibrator(params, args.output)
-        else:
-            iso_model = fit_isotonic(probs, outcomes)
-            save_calibrator(iso_model, args.output)
+        iso_model = fit_isotonic(probs, outcomes)
+        save_calibrator(iso_model, args.output)
 
         print(f"  Calibrateur sauvegardé dans : {args.output}")
 
-        # Afficher le contenu du calibrateur pour copie manuelle
+        # Afficher le contenu pour copie manuelle
         print()
         print("=" * 60)
         print("CONTENU DU CALIBRATEUR (à copier dans configs/calibrator.json)")

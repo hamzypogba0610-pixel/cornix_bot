@@ -23,45 +23,8 @@ def select_test_matches(s, league: str,
     return s.execute(stmt).scalars().all()
 
 
-def evaluate_match(s, match: Match,
-                   n_simulations: int = 5000) -> dict:
-    """Évalue un seul match : lance le pipeline et compare au résultat réel."""
-    result = run_pipeline(
-        s,
-        team1=match.home_team,
-        team2=match.away_team,
-        league=match.league,
-        match_date=match.date,
-        n_simulations=n_simulations,
-    )
-
-    outcome = check_outcome(result["top"], match)
-
-    top = result["top"]
-    return {
-        "match_id": match.match_id,
-        "date": match.date.isoformat(),
-        "home_team": match.home_team,
-        "away_team": match.away_team,
-        "decision": result["decision"],
-        "top_market_id": top["market_id"] if top else None,
-        "top_prob": top["prob"] if top else None,
-        "top_prob_raw": top.get("prob_raw") if top else None,
-        "top_score": top["score"] if top else None,
-        "real_c1": match.home_corners,
-        "real_c2": match.away_corners,
-        "real_total": match.home_corners + match.away_corners,
-        "outcome": outcome,
-        "reason": result["reason"],
-    }
-
-
-def check_outcome(top_market: dict | None, match: Match) -> int | None:
-    """Vérifie si le marché top a gagné (1) ou perdu (0)."""
-    if top_market is None:
-        return None
-
-    market_id = top_market["market_id"]
+def _check_market(market_id: str, match: Match) -> int | None:
+    """Vérifie un marché générique à partir de son ID."""
     real_total = match.home_corners + match.away_corners
 
     try:
@@ -77,7 +40,6 @@ def check_outcome(top_market: dict | None, match: Match) -> int | None:
             )
     except (ValueError, IndexError):
         return None
-
     return None
 
 
@@ -122,13 +84,66 @@ def _check_multicorner(c1: int, c2: int, total: int,
     return int(ok_team and ok_total)
 
 
+def evaluate_match(s, match: Match,
+                   n_simulations: int = 5000) -> dict:
+    """Évalue un match et collecte TOUS les marchés avec leurs résultats."""
+    result = run_pipeline(
+        s,
+        team1=match.home_team,
+        team2=match.away_team,
+        league=match.league,
+        match_date=match.date,
+        n_simulations=n_simulations,
+    )
+
+    top = result["top"]
+    top_outcome = _check_market(top["market_id"], match) if top else None
+
+    # Collecter TOUS les marchés avec leurs outcomes
+    all_market_outcomes = []
+    for mk in result.get("all_markets", []):
+        outcome = _check_market(mk["market_id"], match)
+        all_market_outcomes.append({
+            "market_id": mk["market_id"],
+            "prob": mk.get("prob"),
+            "prob_raw": mk.get("prob_raw"),
+            "score": mk.get("score"),
+            "outcome": outcome,
+        })
+
+    return {
+        "match_id": match.match_id,
+        "date": match.date.isoformat(),
+        "home_team": match.home_team,
+        "away_team": match.away_team,
+        "decision": result["decision"],
+        "top_market_id": top["market_id"] if top else None,
+        "top_prob": top["prob"] if top else None,
+        "top_prob_raw": top.get("prob_raw") if top else None,
+        "top_score": top["score"] if top else None,
+        "real_c1": match.home_corners,
+        "real_c2": match.away_corners,
+        "real_total": match.home_corners + match.away_corners,
+        "outcome": top_outcome,
+        "reason": result["reason"],
+        "all_markets": all_market_outcomes,
+    }
+
+
+def check_outcome(top_market: dict | None, match: Match) -> int | None:
+    """Compatibilité avec l'ancienne API."""
+    if top_market is None:
+        return None
+    return _check_market(top_market["market_id"], match)
+
+
 def run_walk_forward(s, league: str,
                      start_date: date,
                      end_date: date,
                      limit: int | None = None,
                      n_simulations: int = 5000,
                      verbose: bool = True) -> list[dict]:
-    """Lance un backtest walk-forward sur une période et une ligue."""
+    """Lance un backtest walk-forward."""
     matches = select_test_matches(s, league, start_date, end_date, limit)
     results = []
 
@@ -147,13 +162,14 @@ def run_walk_forward(s, league: str,
                     "WIN" if r["outcome"] == 1
                     else ("LOSS" if r["outcome"] == 0 else "-")
                 )
+                n_markets = len(r.get("all_markets", []))
                 print(
                     f"[{i+1}/{len(matches)}] "
                     f"{m.home_team} vs {m.away_team} "
                     f"| C1={r['real_c1']} C2={r['real_c2']} T={r['real_total']} "
                     f"| {r['decision']:6s} | top={top_id:22s} | "
                     f"raw={p_raw_str} cal={p_cal_str} | {outcome_str} | "
-                    f"{r['reason']}"
+                    f"markets={n_markets}"
                 )
         except Exception as e:
             if verbose:

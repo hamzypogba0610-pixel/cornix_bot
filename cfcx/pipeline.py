@@ -17,10 +17,10 @@ from cfcx.calibration.trainer import load_calibrator
 
 DEFAULT_RHO = 0.10
 DEFAULT_DISPERSION = 1.2
+DEFAULT_SEED = 42
 CALIBRATOR_PATH = "configs/calibrator.json"
 
-# Avantage domicile : le domicile fait ~10% de corners en plus,
-# l'extérieur ~9% en moins. Total global préservé.
+# Avantage domicile
 HOME_BOOST = 1.10
 AWAY_FACTOR = 0.91
 
@@ -58,11 +58,14 @@ def _apply_calibration(prob: float) -> float:
 
 
 def run(s, team1: str, team2: str, league: str,
-        match_date: date, n_simulations: int = 10000) -> dict:
+        match_date: date,
+        n_simulations: int = 10000,
+        seed: int | None = DEFAULT_SEED) -> dict:
     """Pipeline complet pour un match.
 
     team1 = équipe à domicile
     team2 = équipe à l'extérieur
+    seed : 42 par défaut -> reproductibilité. None -> aléatoire.
     """
     # 1. Prior et stats de la ligue
     prior = league_prior(s, league, match_date)
@@ -90,13 +93,14 @@ def run(s, team1: str, team2: str, league: str,
     lam1 = lam1 * HOME_BOOST
     lam2 = lam2 * AWAY_FACTOR
 
-    # 6. Distribution jointe
+    # 6. Distribution jointe (reproductible)
     jd = joint_distribution(
         lam1=lam1, lam2=lam2,
         dispersion1=DEFAULT_DISPERSION,
         dispersion2=DEFAULT_DISPERSION,
         rho=DEFAULT_RHO,
         n_simulations=n_simulations,
+        seed=seed,
     )
     c1_samples = jd["c1_samples"]
     c2_samples = jd["c2_samples"]
@@ -104,7 +108,7 @@ def run(s, team1: str, team2: str, league: str,
     # 7. Marchés (probabilités brutes)
     markets = generate_all(c1_samples, c2_samples)
 
-    # 8. Calibration des probabilités
+    # 8. Calibration
     for mk in markets:
         mk["prob_raw"] = mk["prob"]
         mk["prob"] = _apply_calibration(mk["prob_raw"])
@@ -146,16 +150,19 @@ def run(s, team1: str, team2: str, league: str,
     result["date"] = match_date.isoformat()
     result["lam1"] = lam1
     result["lam2"] = lam2
+    result["seed"] = seed
 
     return result
 
 
 def run_simple(team1: str, team2: str, league: str,
-               match_date: date, n_simulations: int = 10000) -> dict:
+               match_date: date,
+               n_simulations: int = 10000,
+               seed: int | None = DEFAULT_SEED) -> dict:
     """Version qui ouvre sa propre session."""
     s = make_session()
     try:
         return run(s, team1, team2, league, match_date,
-                   n_simulations=n_simulations)
+                   n_simulations=n_simulations, seed=seed)
     finally:
         s.close()

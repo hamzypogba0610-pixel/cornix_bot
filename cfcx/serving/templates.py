@@ -237,16 +237,17 @@ function gradeValue(ev, kelly, p_post, p_market) {
 }
 
 function analyze(el, p_model) {
-  const input = el.parentElement.querySelector('input');
+  // CORRECTION : remonter jusqu'au bloc .market (parent du .odds-row)
+  const market = el.closest('.market');
   const verdict = el.parentElement.querySelector('.verdict');
-  const analysis = el.parentElement.querySelector('.analysis');
+  const analysis = market ? market.querySelector('.analysis') : null;
 
-  const odds = parseFloat(input.value);
+  const odds = parseFloat(el.value);
 
   if (!odds || odds <= 1) {
     verdict.textContent = "—";
     verdict.className = "verdict none";
-    analysis.classList.remove("show");
+    if (analysis) analysis.classList.remove("show");
     return;
   }
 
@@ -265,6 +266,8 @@ function analyze(el, p_model) {
     verdict.textContent = "❌ NO BET (" + (ev * 100).toFixed(1) + "%)";
     verdict.className = "verdict ko";
   }
+
+  if (!analysis) return;
 
   const kellyPct = (kelly * 100).toFixed(1);
   const barWidth = Math.min(100, kelly * 100 * 4);

@@ -4,7 +4,7 @@ FORM_HTML = """
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cornix — Prédiction Multi Corners</title>
+<title>Cornix — Prédiction Multi Marchés</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -23,6 +23,13 @@ FORM_HTML = """
     font-size: 14px; color: #58a6ff;
     margin-bottom: 14px; text-transform: uppercase;
     letter-spacing: 0.5px;
+  }
+  .card h3 {
+    font-size: 13px; color: #8b949e;
+    margin: 14px 0 8px 0; text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-top: 1px solid #30363d;
+    padding-top: 12px;
   }
   label {
     display: block; font-size: 12px; color: #8b949e;
@@ -88,7 +95,7 @@ FORM_HTML = """
 <body>
 <div class="container">
   <h1>🎯 Cornix</h1>
-  <p class="sub">Prédiction Multi Corners pré-match</p>
+  <p class="sub">Prédiction Multi Marchés — Corners & Buts</p>
 
   <form id="form" onsubmit="submitForm(event)">
     <div class="card">
@@ -168,7 +175,6 @@ function renderVerdict(el, prob) {
 function marketBlock(title, m, isBest) {
   if (!m) return "";
   const cls = isBest ? "market best" : "market";
-  const mid = m.market_id.replace(/[^A-Za-z0-9]/g, "_");
   const justOdds = m.prob > 0 ? (1.0 / m.prob).toFixed(2) : "—";
   return `
     <div class="${cls}">
@@ -203,7 +209,7 @@ function submitForm(e) {
 
   const result = document.getElementById("result");
   result.style.display = "block";
-  result.innerHTML = '<div class="loading">⏳ Analyse en cours... (10-20 secondes)</div>';
+  result.innerHTML = '<div class="loading">⏳ Analyse en cours... (20-40 secondes)</div>';
 
   fetch("/predict", {
     method: "POST",
@@ -224,21 +230,43 @@ function submitForm(e) {
     html += '<div class="market-detail">' + d.reason + '</div>';
     html += '</div>';
 
-    html += '<div class="card"><h2>🎯 Meilleur marché</h2>';
+    html += '<div class="card"><h2>🎯 Meilleur marché global</h2>';
     html += marketBlock("TOP", d.top, true);
     html += '</div>';
 
-    html += '<div class="card"><h2>📊 Top par famille — saisis les cotes</h2>';
+    // ========== CORNERS ==========
+    html += '<div class="card"><h2>🟦 Corners — saisis les cotes</h2>';
     html += marketBlock("🏠 Équipe 1", d.top_per_family.team1, false);
     html += marketBlock("✈️ Équipe 2", d.top_per_family.team2, false);
     html += marketBlock("🏆 Total", d.top_per_family.total, false);
     html += marketBlock("🎲 Multi Corner", d.top_per_family.multicorner, false);
     html += '</div>';
 
+    // ========== BUTS ==========
+    html += '<div class="card"><h2>⚽ Buts — saisis les cotes</h2>';
+    html += marketBlock("🎯 1X2", d.top_per_family.result, false);
+    html += marketBlock("📊 Over/Under", d.top_per_family.goals_total, false);
+    html += marketBlock("⚖️ Handicap", d.top_per_family.handicap, false);
+
+    if (d.goals_outcomes) {
+      html += '<h3>Répartition 1X2</h3>';
+      html += '<div class="market-detail">';
+      html += '🏠 Domicile : <span>' + fmtPct(d.goals_outcomes.home_win) + '</span> | ';
+      html += '⚖️ Nul : <span>' + fmtPct(d.goals_outcomes.draw) + '</span> | ';
+      html += '✈️ Extérieur : <span>' + fmtPct(d.goals_outcomes.away_win) + '</span>';
+      html += '</div>';
+    }
+    html += '</div>';
+
+    // ========== TECHNIQUE ==========
     html += '<div class="card"><h2>📈 Technique</h2>';
     html += '<div class="market-detail">';
+    html += '<b>Corners</b><br>';
     html += 'λ1 : <span>' + (d.lam1 ? d.lam1.toFixed(2) : "—") + '</span> | ';
     html += 'λ2 : <span>' + (d.lam2 ? d.lam2.toFixed(2) : "—") + '</span><br>';
+    html += '<b>Buts</b><br>';
+    html += 'λ domicile : <span>' + (d.lam_h_goals ? d.lam_h_goals.toFixed(2) : "—") + '</span> | ';
+    html += 'λ extérieur : <span>' + (d.lam_a_goals ? d.lam_a_goals.toFixed(2) : "—") + '</span><br>';
     html += 'MDS : <span>' + (d.dominance.mds ? d.dominance.mds.toFixed(3) : "—") + '</span>';
     html += '</div></div>';
 

@@ -21,49 +21,65 @@ from cfcx.calibration.trainer import load_calibrator
 DEFAULT_RHO = 0.10
 DEFAULT_DISPERSION = 1.2
 DEFAULT_SEED = 42
-CALIBRATOR_PATH = "configs/calibrator.json"
+
+CALIBRATOR_CORNERS_PATH = "configs/calibrator.json"
+CALIBRATOR_GOALS_PATH = "configs/calibrator_goals.json"
 
 # Avantage domicile
 HOME_BOOST = 1.10
 AWAY_FACTOR = 0.91
 
-# Référence : buts moyens par équipe dans un match (toutes ligues)
 LEAGUE_GOALS_AVG = 1.35
 
+# Shrinkage pour chaque calibrateur (50% = prudent)
+SHRINK_CORNERS = 0.5
+SHRINK_GOALS = 0.5
 
-_CALIBRATOR_CACHE = None
+
+_CALIBRATOR_CORNERS_CACHE = None
+_CALIBRATOR_GOALS_CACHE = None
 
 
-def _load_calibrator():
-    """Charge le calibrateur une seule fois (cache)."""
-    global _CALIBRATOR_CACHE
-    if _CALIBRATOR_CACHE is not None:
-        return _CALIBRATOR_CACHE
+def _load_calibrator(path: str, cache_key: str):
+    """Charge un calibrateur et le met en cache."""
+    global _CALIBRATOR_CORNERS_CACHE, _CALIBRATOR_GOALS_CACHE
 
-    path = Path(CALIBRATOR_PATH)
-    if not path.exists():
-        _CALIBRATOR_CACHE = {"type": "none"}
-        return _CALIBRATOR_CACHE
+    if cache_key == "corners":
+        if _CALIBRATOR_CORNERS_CACHE is not None:
+            return _CALIBRATOR_CORNERS_CACHE
+    elif cache_key == "goals":
+        if _CALIBRATOR_GOALS_CACHE is not None:
+            return _CALIBRATOR_GOALS_CACHE
 
-    try:
-        _CALIBRATOR_CACHE = load_calibrator(str(path))
-    except Exception:
-        _CALIBRATOR_CACHE = {"type": "none"}
-    return _CALIBRATOR_CACHE
+    p = Path(path)
+    if not p.exists():
+        result = {"type": "none"}
+    else:
+        try:
+            result = load_calibrator(str(p))
+        except Exception:
+            result = {"type": "none"}
+
+    if cache_key == "corners":
+        _CALIBRATOR_CORNERS_CACHE = result
+    elif cache_key == "goals":
+        _CALIBRATOR_GOALS_CACHE = result
+    return result
 
 
 def _apply_calibration(prob: float, sport: str = "corners") -> float:
-    """Applique le calibrateur.
-
-    Pour l'instant, le calibrateur est entrainé sur les corners uniquement.
-    Les marchés buts ne sont pas calibrés (retournent la proba brute).
-    """
-    if sport != "corners":
+    """Applique le calibrateur correspondant au sport."""
+    if sport == "corners":
+        cal = _load_calibrator(CALIBRATOR_CORNERS_PATH, "corners")
+        shrink = SHRINK_CORNERS
+    elif sport == "goals":
+        cal = _load_calibrator(CALIBRATOR_GOALS_PATH, "goals")
+        shrink = SHRINK_GOALS
+    else:
         return prob
 
-    cal = _load_calibrator()
     if cal.get("type") == "isotonic":
-        return apply_isotonic(cal["model"], prob)
+        return apply_isotonic(cal["model"], prob, shrink=shrink)
     if cal.get("type") == "beta":
         from cfcx.calibration.beta import apply_beta
         return apply_beta(cal, prob)
@@ -72,10 +88,7 @@ def _apply_calibration(prob: float, sport: str = "corners") -> float:
 
 def _adjust_goals_intensity(atk_for: float, def_against: float,
                             league_avg: float) -> float:
-    """Calcule l'intensité de buts pour une équipe.
-
-    Combine attaque et défense adverse, normalisé par la ligue.
-    """
+    """Calcule l'intensité de buts pour une équipe."""
     if league_avg <= 0:
         return 1.35
     return max(0.3, (atk_for + def_against) / 2.0 * (league_avg / 1.35))
@@ -85,11 +98,8 @@ def run(s, team1: str, team2: str, league: str,
         match_date: date,
         n_simulations: int = 10000,
         seed: int | None = DEFAULT_SEED) -> dict:
-    """Pipeline complet : corners + buts.
+    """Pipeline complet : corners + buts."""
 
-    team1 = équipe à domicile
-    team2 = équipe à l'extérieur
-    """
     # ========================================================
     # 1. ANALYSE CORNERS
     # ========================================================
@@ -131,7 +141,6 @@ def run(s, team1: str, team2: str, league: str,
     gdna1 = goal_dna(s, team1, league, match_date)
     gdna2 = goal_dna(s, team2, league, match_date)
 
-    # Valeurs par défaut si pas assez de données
     atk1 = gdna1["attack_goals"] or LEAGUE_GOALS_AVG
     def1 = gdna1["defense_goals"] or LEAGUE_GOALS_AVG
     atk2 = gdna2["attack_goals"] or LEAGUE_GOALS_AVG

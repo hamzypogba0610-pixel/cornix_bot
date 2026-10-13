@@ -59,6 +59,26 @@ FORM_HTML = """
   .market-detail { font-size: 13px; color: #8b949e; }
   .market-detail span { color: #e6edf3; }
   .best { border-color: #238636; border-width: 2px; }
+  .odds-row {
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid #30363d;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .odds-row label {
+    margin: 0; flex-shrink: 0;
+    font-size: 12px; color: #8b949e;
+  }
+  .odds-row input {
+    width: 80px; padding: 6px 8px; font-size: 14px;
+  }
+  .verdict {
+    margin-left: auto; font-size: 13px;
+    font-weight: 600; padding: 4px 10px;
+    border-radius: 12px;
+  }
+  .verdict.ok { background: #238636; color: white; }
+  .verdict.ko { background: #da3633; color: white; }
+  .verdict.none { background: #30363d; color: #8b949e; }
   .loading {
     text-align: center; padding: 20px;
     color: #8b949e; font-size: 14px;
@@ -117,18 +137,54 @@ function fmtPct(x) {
   return (x * 100).toFixed(1) + "%";
 }
 
+function computeEV(prob, odds) {
+  if (!prob || !odds || odds <= 1) return null;
+  return prob * odds - 1.0;
+}
+
+function renderVerdict(el, prob) {
+  const input = el.parentElement.querySelector('input');
+  const verdict = el.parentElement.querySelector('.verdict');
+  const odds = parseFloat(input.value);
+
+  if (!odds || odds <= 1) {
+    verdict.textContent = "—";
+    verdict.className = "verdict none";
+    return;
+  }
+
+  const ev = computeEV(prob, odds);
+  const evPct = (ev * 100).toFixed(1);
+
+  if (ev > 0) {
+    verdict.textContent = "✅ BET (" + evPct + "%)";
+    verdict.className = "verdict ok";
+  } else {
+    verdict.textContent = "❌ NO BET (" + evPct + "%)";
+    verdict.className = "verdict ko";
+  }
+}
+
 function marketBlock(title, m, isBest) {
   if (!m) return "";
   const cls = isBest ? "market best" : "market";
+  const mid = m.market_id.replace(/[^A-Za-z0-9]/g, "_");
+  const justOdds = m.prob > 0 ? (1.0 / m.prob).toFixed(2) : "—";
   return `
     <div class="${cls}">
       <div class="market-title">${title} — ${m.market_id}</div>
       <div class="market-detail">
-        Probabilité : <span>${fmtPct(m.prob)}</span> |
-        Brute : <span>${fmtPct(m.prob_raw)}</span> |
-        Edge : <span>${fmtPct(m.edge)}</span><br>
-        Robustesse : <span>${fmtPct(m.rob)}</span> |
-        Score : <span>${m.score ? m.score.toFixed(3) : "—"}</span>
+        Probabilité calibrée : <span>${fmtPct(m.prob)}</span> |
+        Brute : <span>${fmtPct(m.prob_raw)}</span><br>
+        Edge modèle : <span>${fmtPct(m.edge)}</span> |
+        Cote juste : <span>${justOdds}</span> |
+        Robustesse : <span>${fmtPct(m.rob)}</span>
+      </div>
+      <div class="odds-row">
+        <label>Ta cote :</label>
+        <input type="number" step="0.01" min="1.01" placeholder="1.20"
+               oninput="renderVerdict(this, ${m.prob});">
+        <span class="verdict none">—</span>
       </div>
     </div>
   `;
@@ -172,7 +228,7 @@ function submitForm(e) {
     html += marketBlock("TOP", d.top, true);
     html += '</div>';
 
-    html += '<div class="card"><h2>📊 Top par famille</h2>';
+    html += '<div class="card"><h2>📊 Top par famille — saisis les cotes</h2>';
     html += marketBlock("🏠 Équipe 1", d.top_per_family.team1, false);
     html += marketBlock("✈️ Équipe 2", d.top_per_family.team2, false);
     html += marketBlock("🏆 Total", d.top_per_family.total, false);

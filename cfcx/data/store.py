@@ -17,6 +17,8 @@ class Match(Base):
     away_team = Column(String)
     home_corners = Column(Integer)
     away_corners = Column(Integer)
+    home_goals = Column(Integer, nullable=True)
+    away_goals = Column(Integer, nullable=True)
 
 
 class TeamFeature(Base):

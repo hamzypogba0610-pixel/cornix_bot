@@ -1,19 +1,19 @@
-name: Update Goals
+name: Reset and Reingest
 
 on:
   workflow_dispatch:
 
 jobs:
-  update:
+  reset:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - run: pip install -e .
-      - name: Run update_goals
-        run: python scripts/ingest.py update_goals
+      - name: Reset matches table and reingest
+        run: python scripts/ingest.py reset
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

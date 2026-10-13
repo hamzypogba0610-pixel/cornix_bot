@@ -22,21 +22,27 @@ def fit_isotonic(raw_probs: list[float],
     return iso
 
 
-def apply_isotonic(iso: IsotonicRegression, raw_prob: float) -> float:
-    """Applique le calibrateur, mais UNIQUEMENT dans sa zone d'entraînement.
+def apply_isotonic(iso: IsotonicRegression, raw_prob: float,
+                   shrink: float = 0.5) -> float:
+    """Applique le calibrateur avec shrinkage.
 
-    Si la probabilité est en dehors, on la laisse inchangée (protection
-    contre l'extrapolation hasardeuse du calibrateur).
+    shrink = 0.0 -> calibrateur pur
+    shrink = 0.5 -> mélange 50/50 brute + calibrée (défaut, prudent)
+    shrink = 1.0 -> proba brute inchangée
+
+    Protection : hors zone d'entraînement, retourne la proba brute.
     """
-    # Récupérer les bornes de la zone d'entraînement
+    calibrated = raw_prob
+
     if hasattr(iso, "X_thresholds_") and len(iso.X_thresholds_) > 0:
         x_min = float(iso.X_thresholds_[0])
         x_max = float(iso.X_thresholds_[-1])
-        if raw_prob < x_min or raw_prob > x_max:
-            return raw_prob
+        if x_min <= raw_prob <= x_max:
+            calibrated = float(iso.predict([raw_prob])[0])
 
-    val = float(iso.predict([raw_prob])[0])
-    return max(0.0, min(1.0, val))
+    # Mélange : (1-shrink)*calibrée + shrink*brute
+    blended = (1.0 - shrink) * calibrated + shrink * raw_prob
+    return max(0.0, min(1.0, blended))
 
 
 def brier_score(probs: list[float], outcomes: list[int]) -> float:

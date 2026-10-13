@@ -4,7 +4,7 @@ FORM_HTML = """
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cornix — Prédiction Multi Marchés</title>
+<title>Cornix — Kelly-Bayesian Value Engine</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -91,16 +91,53 @@ FORM_HTML = """
   .verdict.ok { background: #238636; color: white; }
   .verdict.ko { background: #da3633; color: white; }
   .verdict.none { background: #30363d; color: #8b949e; }
+  .analysis {
+    margin-top: 12px; padding: 12px;
+    background: #0a0d12; border: 1px solid #30363d;
+    border-radius: 6px; font-size: 12px;
+    display: none;
+  }
+  .analysis.show { display: block; }
+  .analysis-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 6px 12px; color: #8b949e;
+  }
+  .analysis-grid .k { color: #8b949e; }
+  .analysis-grid .v { color: #e6edf3; font-weight: 500; }
+  .grade-badge {
+    display: inline-block; padding: 4px 12px;
+    border-radius: 12px; font-weight: 700;
+    font-size: 13px; margin-top: 10px;
+  }
+  .grade-S { background: #6e40c9; color: white; }
+  .grade-A { background: #238636; color: white; }
+  .grade-B { background: #1f6feb; color: white; }
+  .grade-C { background: #9e6a03; color: white; }
+  .grade-D { background: #6e7681; color: white; }
+  .kelly-bar {
+    margin-top: 8px; height: 6px;
+    background: #30363d; border-radius: 3px;
+    overflow: hidden;
+  }
+  .kelly-fill {
+    height: 100%; background: #58a6ff;
+    transition: width 0.3s;
+  }
   .loading {
     text-align: center; padding: 20px;
     color: #8b949e; font-size: 14px;
+  }
+  .footnote {
+    font-size: 11px; color: #6e7681;
+    text-align: center; margin-top: 20px;
+    line-height: 1.6;
   }
 </style>
 </head>
 <body>
 <div class="container">
   <h1>🎯 Cornix</h1>
-  <p class="sub">Prédiction Multi Marchés — Corners & Buts</p>
+  <p class="sub">Kelly-Bayesian Value Engine</p>
 
   <form id="form" onsubmit="submitForm(event)">
     <div class="card">
@@ -141,40 +178,120 @@ FORM_HTML = """
   </form>
 
   <div id="result"></div>
+
+  <div class="footnote">
+    Kelly-Bayesian Value Engine — fusion bayésienne + dé-marginalisation + Kelly fractionnel (25%)<br>
+    Les probabilités calibrées proviennent de 9154 paires d'entraînement (Isotonic).
+  </div>
 </div>
 
 <script>
+const MARGIN_BOOK = 0.05;
+const VAR_MODEL = 0.15 * 0.15;
+const VAR_MARKET = 0.08 * 0.08;
+const KELLY_SAFE = 0.25;
+
 function fmtPct(x) {
-  if (x === null || x === undefined) return "—";
+  if (x === null || x === undefined || isNaN(x)) return "—";
   return (x * 100).toFixed(1) + "%";
 }
 
-function computeEV(prob, odds) {
-  if (!prob || !odds || odds <= 1) return null;
-  return prob * odds - 1.0;
+function impliedFromOdds(odds) {
+  if (!odds || odds <= 1) return null;
+  return 1.0 / odds;
 }
 
-function renderVerdict(el, prob) {
+function fairFromImplied(p_imp) {
+  if (p_imp === null) return null;
+  return Math.min(0.99, p_imp * (1 - MARGIN_BOOK));
+}
+
+function bayesianFusion(p_model, p_market) {
+  if (p_model === null || p_market === null) return p_model;
+  const w_model = 1.0 / VAR_MODEL;
+  const w_market = 1.0 / VAR_MARKET;
+  return (w_model * p_model + w_market * p_market) / (w_model + w_market);
+}
+
+function kellyFraction(p, odds) {
+  if (!odds || odds <= 1) return 0;
+  const b = odds - 1;
+  const q = 1 - p;
+  return (b * p - q) / b;
+}
+
+function computeEV(p, odds) {
+  if (!p || !odds || odds <= 1) return null;
+  return p * odds - 1.0;
+}
+
+function gradeValue(ev, kelly, p_post, p_market) {
+  if (ev === null || ev <= 0) return "D";
+  const strongEdge = p_post - p_market;
+
+  if (ev > 0.10 && kelly > 0.08 && strongEdge > 0.05) return "S";
+  if (ev > 0.05 && kelly > 0.04 && strongEdge > 0.03) return "A";
+  if (ev > 0.03 && kelly > 0.02) return "B";
+  if (ev > 0.01) return "C";
+  return "D";
+}
+
+function analyze(el, p_model) {
   const input = el.parentElement.querySelector('input');
   const verdict = el.parentElement.querySelector('.verdict');
+  const analysis = el.parentElement.querySelector('.analysis');
+
   const odds = parseFloat(input.value);
 
   if (!odds || odds <= 1) {
     verdict.textContent = "—";
     verdict.className = "verdict none";
+    analysis.classList.remove("show");
     return;
   }
 
-  const ev = computeEV(prob, odds);
-  const evPct = (ev * 100).toFixed(1);
+  const p_implied = impliedFromOdds(odds);
+  const p_market = fairFromImplied(p_implied);
+  const p_post = bayesianFusion(p_model, p_market);
+  const ev = computeEV(p_post, odds);
+  const kelly_raw = kellyFraction(p_post, odds);
+  const kelly = Math.max(0, kelly_raw * KELLY_SAFE);
+  const grade = gradeValue(ev, kelly, p_post, p_market);
 
   if (ev > 0) {
-    verdict.textContent = "✅ BET (" + evPct + "%)";
+    verdict.textContent = "✅ BET (+" + (ev * 100).toFixed(1) + "%)";
     verdict.className = "verdict ok";
   } else {
-    verdict.textContent = "❌ NO BET (" + evPct + "%)";
+    verdict.textContent = "❌ NO BET (" + (ev * 100).toFixed(1) + "%)";
     verdict.className = "verdict ko";
   }
+
+  const kellyPct = (kelly * 100).toFixed(1);
+  const barWidth = Math.min(100, kelly * 100 * 4);
+
+  analysis.innerHTML = `
+    <div class="analysis-grid">
+      <div class="k">Prob implicite book :</div>
+      <div class="v">${fmtPct(p_implied)}</div>
+      <div class="k">Prob juste (dé-marg.) :</div>
+      <div class="v">${fmtPct(p_market)}</div>
+      <div class="k">Prob modèle :</div>
+      <div class="v">${fmtPct(p_model)}</div>
+      <div class="k">Prob postérieure :</div>
+      <div class="v">${fmtPct(p_post)}</div>
+      <div class="k">Edge bayésien :</div>
+      <div class="v">${fmtPct(p_post - p_market)}</div>
+      <div class="k">EV postérieur :</div>
+      <div class="v">${ev !== null ? (ev * 100).toFixed(2) + "%" : "—"}</div>
+      <div class="k">Kelly (sûr 25%) :</div>
+      <div class="v">${kellyPct}%</div>
+    </div>
+    <div class="kelly-bar">
+      <div class="kelly-fill" style="width:${barWidth}%"></div>
+    </div>
+    <div class="grade-badge grade-${grade}">Grade ${grade}</div>
+  `;
+  analysis.classList.add("show");
 }
 
 function marketBlock(title, m, isBest) {
@@ -182,7 +299,6 @@ function marketBlock(title, m, isBest) {
   const cls = isBest ? "market best" : "market";
   const justOdds = m.prob > 0 ? (1.0 / m.prob).toFixed(2) : "—";
 
-  // Marquer les marchés non calibrés (buts)
   const isCalibrated = m.sport !== "goals";
   const calibBadge = isCalibrated
     ? ""
@@ -199,17 +315,17 @@ function marketBlock(title, m, isBest) {
       </div>
       <div class="market-detail">
         ${probLabel} : <span>${fmtPct(m.prob)}</span> |
-        Brute : <span>${fmtPct(m.prob_raw)}</span><br>
+        Cote juste : <span>${justOdds}</span><br>
         Edge modèle : <span>${fmtPct(m.edge)}</span> |
-        Cote juste : <span>${justOdds}</span> |
         Robustesse : <span>${fmtPct(m.rob)}</span>
       </div>
       <div class="odds-row">
         <label>Ta cote :</label>
         <input type="number" step="0.01" min="1.01" placeholder="1.20"
-               oninput="renderVerdict(this, ${m.prob});">
+               oninput="analyze(this, ${m.prob});">
         <span class="verdict none">—</span>
       </div>
+      <div class="analysis"></div>
     </div>
   `;
 }
@@ -252,14 +368,14 @@ function submitForm(e) {
     html += marketBlock("TOP", d.top, true);
     html += '</div>';
 
-    html += '<div class="card"><h2>🟦 Corners — saisis les cotes</h2>';
+    html += '<div class="card"><h2>🟦 Corners</h2>';
     html += marketBlock("🏠 Équipe 1", d.top_per_family.team1, false);
     html += marketBlock("✈️ Équipe 2", d.top_per_family.team2, false);
     html += marketBlock("🏆 Total", d.top_per_family.total, false);
     html += marketBlock("🎲 Multi Corner", d.top_per_family.multicorner, false);
     html += '</div>';
 
-    html += '<div class="card"><h2>⚽ Buts — saisis les cotes</h2>';
+    html += '<div class="card"><h2>⚽ Buts</h2>';
     html += marketBlock("🎯 1X2", d.top_per_family.result, false);
     html += marketBlock("📊 Over/Under", d.top_per_family.goals_total, false);
     html += marketBlock("⚖️ Handicap", d.top_per_family.handicap, false);

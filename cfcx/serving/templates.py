@@ -186,9 +186,9 @@ FORM_HTML = """
 </div>
 
 <script>
-const MARGIN_BOOK = 0.05;
-const VAR_MODEL = 0.15 * 0.15;
-const VAR_MARKET = 0.08 * 0.08;
+const MARGIN_BOOK = 0.03;
+const VAR_MODEL = 0.08 * 0.08;
+const VAR_MARKET = 0.12 * 0.12;
 const KELLY_SAFE = 0.25;
 
 function fmtPct(x) {

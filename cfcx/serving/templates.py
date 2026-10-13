@@ -58,11 +58,6 @@ FORM_HTML = """
   }
   .bet { background: #238636; color: white; }
   .nobet { background: #6e7681; color: white; }
-  .warn {
-    display: inline-block; padding: 2px 8px;
-    border-radius: 10px; font-size: 11px; font-weight: 600;
-    background: #9e6a03; color: white; margin-left: 6px;
-  }
   .market {
     background: #0d1117; border: 1px solid #30363d;
     border-radius: 8px; padding: 12px; margin-bottom: 10px;
@@ -137,7 +132,7 @@ FORM_HTML = """
 <body>
 <div class="container">
   <h1>🎯 Cornix</h1>
-  <p class="sub">Kelly-Bayesian Value Engine</p>
+  <p class="sub">Kelly-Bayesian Value Engine — Corners &amp; Buts</p>
 
   <form id="form" onsubmit="submitForm(event)">
     <div class="card">
@@ -181,7 +176,7 @@ FORM_HTML = """
 
   <div class="footnote">
     Kelly-Bayesian Value Engine — fusion bayésienne + dé-marginalisation + Kelly fractionnel (25%)<br>
-    Les probabilités calibrées proviennent de 9154 paires d'entraînement (Isotonic).
+    Calibrateurs : corners (9154 paires) et buts (3327 paires) — Isotonic.
   </div>
 </div>
 
@@ -237,7 +232,6 @@ function gradeValue(ev, kelly, p_post, p_market) {
 }
 
 function analyze(el, p_model) {
-  // CORRECTION : remonter jusqu'au bloc .market (parent du .odds-row)
   const market = el.closest('.market');
   const verdict = el.parentElement.querySelector('.verdict');
   const analysis = market ? market.querySelector('.analysis') : null;
@@ -302,22 +296,13 @@ function marketBlock(title, m, isBest) {
   const cls = isBest ? "market best" : "market";
   const justOdds = m.prob > 0 ? (1.0 / m.prob).toFixed(2) : "—";
 
-  const isCalibrated = m.sport !== "goals";
-  const calibBadge = isCalibrated
-    ? ""
-    : '<span class="warn">⚠️ non calibré</span>';
-
-  const probLabel = isCalibrated
-    ? "Probabilité calibrée"
-    : "Probabilité (brute)";
-
   return `
     <div class="${cls}">
       <div class="market-title">
-        ${title} — ${m.market_id}${calibBadge}
+        ${title} — ${m.market_id}
       </div>
       <div class="market-detail">
-        ${probLabel} : <span>${fmtPct(m.prob)}</span> |
+        Probabilité calibrée : <span>${fmtPct(m.prob)}</span> |
         Cote juste : <span>${justOdds}</span><br>
         Edge modèle : <span>${fmtPct(m.edge)}</span> |
         Robustesse : <span>${fmtPct(m.rob)}</span>

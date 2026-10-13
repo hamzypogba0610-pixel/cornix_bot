@@ -3,11 +3,14 @@ from pathlib import Path
 
 from cfcx.data.store import session as make_session
 from cfcx.features.corner_dna import corner_dna
+from cfcx.features.goal_dna import goal_dna
 from cfcx.features.latent import league_prior, latent_force
 from cfcx.features.matchup import matchup
 from cfcx.features.normalize import league_stats, normalize_team
 from cfcx.models.joint import joint_distribution
+from cfcx.models.goal_joint import joint_distribution_goals
 from cfcx.markets.generator import generate_all
+from cfcx.markets.goal_generator import generate_all_goals
 from cfcx.markets.scorer import score_market
 from cfcx.decision.meta_judge import judge
 from cfcx.decision.no_bet import should_abstain
@@ -23,6 +26,9 @@ CALIBRATOR_PATH = "configs/calibrator.json"
 # Avantage domicile
 HOME_BOOST = 1.10
 AWAY_FACTOR = 0.91
+
+# Référence : buts moyens par équipe dans un match (toutes ligues)
+LEAGUE_GOALS_AVG = 1.35
 
 
 _CALIBRATOR_CACHE = None
@@ -46,8 +52,15 @@ def _load_calibrator():
     return _CALIBRATOR_CACHE
 
 
-def _apply_calibration(prob: float) -> float:
-    """Applique le calibrateur à une probabilité brute."""
+def _apply_calibration(prob: float, sport: str = "corners") -> float:
+    """Applique le calibrateur.
+
+    Pour l'instant, le calibrateur est entrainé sur les corners uniquement.
+    Les marchés buts ne sont pas calibrés (retournent la proba brute).
+    """
+    if sport != "corners":
+        return prob
+
     cal = _load_calibrator()
     if cal.get("type") == "isotonic":
         return apply_isotonic(cal["model"], prob)
@@ -57,43 +70,46 @@ def _apply_calibration(prob: float) -> float:
     return prob
 
 
+def _adjust_goals_intensity(atk_for: float, def_against: float,
+                            league_avg: float) -> float:
+    """Calcule l'intensité de buts pour une équipe.
+
+    Combine attaque et défense adverse, normalisé par la ligue.
+    """
+    if league_avg <= 0:
+        return 1.35
+    return max(0.3, (atk_for + def_against) / 2.0 * (league_avg / 1.35))
+
+
 def run(s, team1: str, team2: str, league: str,
         match_date: date,
         n_simulations: int = 10000,
         seed: int | None = DEFAULT_SEED) -> dict:
-    """Pipeline complet pour un match.
+    """Pipeline complet : corners + buts.
 
     team1 = équipe à domicile
     team2 = équipe à l'extérieur
-    seed : 42 par défaut -> reproductibilité. None -> aléatoire.
     """
-    # 1. Prior et stats de la ligue
+    # ========================================================
+    # 1. ANALYSE CORNERS
+    # ========================================================
     prior = league_prior(s, league, match_date)
     lg_stats = league_stats(s, league, match_date)
     lg_avg = prior["mu"]
 
-    # 2. Corner DNA par équipe
     dna1 = corner_dna(s, team1, league, match_date)
     dna2 = corner_dna(s, team2, league, match_date)
 
-    # 3. Normalisation
     dna1 = normalize_team(dna1, lg_stats["mean"], lg_stats["std"])
     dna2 = normalize_team(dna2, lg_stats["mean"], lg_stats["std"])
 
-    # 4. Forces latentes
     lat1 = latent_force(dna1, prior)
     lat2 = latent_force(dna2, prior)
 
-    # 5. Matchup
     m = matchup(lat1, lat2, lg_avg)
-    lam1 = m["expected_c1"]
-    lam2 = m["expected_c2"]
+    lam1 = m["expected_c1"] * HOME_BOOST
+    lam2 = m["expected_c2"] * AWAY_FACTOR
 
-    # 5b. Avantage domicile
-    lam1 = lam1 * HOME_BOOST
-    lam2 = lam2 * AWAY_FACTOR
-
-    # 6. Distribution jointe (reproductible)
     jd = joint_distribution(
         lam1=lam1, lam2=lam2,
         dispersion1=DEFAULT_DISPERSION,
@@ -105,17 +121,52 @@ def run(s, team1: str, team2: str, league: str,
     c1_samples = jd["c1_samples"]
     c2_samples = jd["c2_samples"]
 
-    # 7. Marchés (probabilités brutes)
-    markets = generate_all(c1_samples, c2_samples)
+    markets_corners = generate_all(c1_samples, c2_samples)
+    for mk in markets_corners:
+        mk["sport"] = "corners"
 
-    # 8. Calibration
-    for mk in markets:
+    # ========================================================
+    # 2. ANALYSE BUTS
+    # ========================================================
+    gdna1 = goal_dna(s, team1, league, match_date)
+    gdna2 = goal_dna(s, team2, league, match_date)
+
+    # Valeurs par défaut si pas assez de données
+    atk1 = gdna1["attack_goals"] or LEAGUE_GOALS_AVG
+    def1 = gdna1["defense_goals"] or LEAGUE_GOALS_AVG
+    atk2 = gdna2["attack_goals"] or LEAGUE_GOALS_AVG
+    def2 = gdna2["defense_goals"] or LEAGUE_GOALS_AVG
+
+    lam_h_goals = _adjust_goals_intensity(atk1, def2, LEAGUE_GOALS_AVG) * HOME_BOOST
+    lam_a_goals = _adjust_goals_intensity(atk2, def1, LEAGUE_GOALS_AVG) * AWAY_FACTOR
+
+    jg = joint_distribution_goals(
+        lam_h=lam_h_goals, lam_a=lam_a_goals,
+        rho=-0.05,
+        n_simulations=n_simulations,
+        seed=seed,
+    )
+    h_samples = jg["h_samples"]
+    a_samples = jg["a_samples"]
+
+    markets_goals = generate_all_goals(h_samples, a_samples)
+    for mk in markets_goals:
+        mk["sport"] = "goals"
+
+    # ========================================================
+    # 3. FUSION + CALIBRATION
+    # ========================================================
+    all_markets_raw = markets_corners + markets_goals
+
+    for mk in all_markets_raw:
         mk["prob_raw"] = mk["prob"]
-        mk["prob"] = _apply_calibration(mk["prob_raw"])
+        mk["prob"] = _apply_calibration(mk["prob_raw"], sport=mk["sport"])
 
-    # 9. Scoring
+    # ========================================================
+    # 4. SCORING
+    # ========================================================
     scored = []
-    for mk in markets:
+    for mk in all_markets_raw:
         p = mk["prob"]
         models_probs = [p, max(0.0, p - 0.02), min(1.0, p + 0.02)]
         perturbed = [p, max(0.0, p - 0.03), min(1.0, p + 0.03)]
@@ -131,13 +182,13 @@ def run(s, team1: str, team2: str, league: str,
             completeness=0.8,
         ))
 
-    # 9b. Exposer tous les marchés scorés pour le calibrateur
     all_markets = scored
 
-    # 10. Décision
+    # ========================================================
+    # 5. DÉCISION
+    # ========================================================
     result = judge(scored)
 
-    # 11. Garde-fou NO BET
     abstain, reason = should_abstain(
         result["top"] if result["top"] else {},
         data_quality=(result["top"]["dq"] if result["top"] else 0.0),
@@ -146,13 +197,18 @@ def run(s, team1: str, team2: str, league: str,
         result["decision"] = "NO_BET"
         result["reason"] = reason
 
-    # 12. Métadonnées
+    # ========================================================
+    # 6. MÉTADONNÉES
+    # ========================================================
     result["team1"] = team1
     result["team2"] = team2
     result["league"] = league
     result["date"] = match_date.isoformat()
     result["lam1"] = lam1
     result["lam2"] = lam2
+    result["lam_h_goals"] = lam_h_goals
+    result["lam_a_goals"] = lam_a_goals
+    result["goals_outcomes"] = jg["outcomes"]
     result["seed"] = seed
     result["all_markets"] = all_markets
 

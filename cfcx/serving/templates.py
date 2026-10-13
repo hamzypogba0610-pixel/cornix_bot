@@ -58,6 +58,11 @@ FORM_HTML = """
   }
   .bet { background: #238636; color: white; }
   .nobet { background: #6e7681; color: white; }
+  .warn {
+    display: inline-block; padding: 2px 8px;
+    border-radius: 10px; font-size: 11px; font-weight: 600;
+    background: #9e6a03; color: white; margin-left: 6px;
+  }
   .market {
     background: #0d1117; border: 1px solid #30363d;
     border-radius: 8px; padding: 12px; margin-bottom: 10px;
@@ -176,11 +181,24 @@ function marketBlock(title, m, isBest) {
   if (!m) return "";
   const cls = isBest ? "market best" : "market";
   const justOdds = m.prob > 0 ? (1.0 / m.prob).toFixed(2) : "—";
+
+  // Marquer les marchés non calibrés (buts)
+  const isCalibrated = m.sport !== "goals";
+  const calibBadge = isCalibrated
+    ? ""
+    : '<span class="warn">⚠️ non calibré</span>';
+
+  const probLabel = isCalibrated
+    ? "Probabilité calibrée"
+    : "Probabilité (brute)";
+
   return `
     <div class="${cls}">
-      <div class="market-title">${title} — ${m.market_id}</div>
+      <div class="market-title">
+        ${title} — ${m.market_id}${calibBadge}
+      </div>
       <div class="market-detail">
-        Probabilité calibrée : <span>${fmtPct(m.prob)}</span> |
+        ${probLabel} : <span>${fmtPct(m.prob)}</span> |
         Brute : <span>${fmtPct(m.prob_raw)}</span><br>
         Edge modèle : <span>${fmtPct(m.edge)}</span> |
         Cote juste : <span>${justOdds}</span> |
@@ -234,7 +252,6 @@ function submitForm(e) {
     html += marketBlock("TOP", d.top, true);
     html += '</div>';
 
-    // ========== CORNERS ==========
     html += '<div class="card"><h2>🟦 Corners — saisis les cotes</h2>';
     html += marketBlock("🏠 Équipe 1", d.top_per_family.team1, false);
     html += marketBlock("✈️ Équipe 2", d.top_per_family.team2, false);
@@ -242,7 +259,6 @@ function submitForm(e) {
     html += marketBlock("🎲 Multi Corner", d.top_per_family.multicorner, false);
     html += '</div>';
 
-    // ========== BUTS ==========
     html += '<div class="card"><h2>⚽ Buts — saisis les cotes</h2>';
     html += marketBlock("🎯 1X2", d.top_per_family.result, false);
     html += marketBlock("📊 Over/Under", d.top_per_family.goals_total, false);
@@ -258,7 +274,6 @@ function submitForm(e) {
     }
     html += '</div>';
 
-    // ========== TECHNIQUE ==========
     html += '<div class="card"><h2>📈 Technique</h2>';
     html += '<div class="market-detail">';
     html += '<b>Corners</b><br>';

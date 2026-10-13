@@ -15,7 +15,7 @@ from cfcx.calibration.beta import (
 
 
 def collect_pairs(results: list[dict]) -> tuple[list[float], list[int]]:
-    """Ancienne méthode : extrait uniquement le top marché de chaque match."""
+    """Ancienne méthode : top marché uniquement."""
     probs, outcomes = [], []
     for r in results:
         if r.get("top_prob") is None:
@@ -29,21 +29,24 @@ def collect_pairs(results: list[dict]) -> tuple[list[float], list[int]]:
     return probs, outcomes
 
 
-def collect_all_pairs(results: list[dict]) -> tuple[list[float], list[int]]:
-    """Nouvelle méthode : extrait TOUS les marchés de chaque match.
+def collect_all_pairs(results: list[dict],
+                      sport: str | None = None
+                      ) -> tuple[list[float], list[int]]:
+    """Extrait TOUS les marchés de chaque match.
 
-    Utilise prob_raw (la probabilité BRUTE du modèle, avant calibration),
-    pour éviter le biais circulaire.
+    sport : 'corners' / 'goals' / None (tous)
+    Utilise prob_raw (probabilité brute) pour éviter le biais circulaire.
     """
     probs, outcomes = [], []
     for r in results:
         markets = r.get("all_markets", [])
         for mk in markets:
+            if sport is not None and mk.get("sport") != sport:
+                continue
             p_raw = mk.get("prob_raw")
             out = mk.get("outcome")
             if p_raw is None or out is None:
                 continue
-            # Ne garder que les marchés dans la zone utile (0.30 - 0.95)
             if 0.30 < p_raw < 0.95:
                 probs.append(float(p_raw))
                 outcomes.append(int(out))
@@ -52,7 +55,6 @@ def collect_all_pairs(results: list[dict]) -> tuple[list[float], list[int]]:
 
 def _eval_method(name: str, test_p: list[float], test_o: list[int],
                  calibrated: list[float]) -> dict:
-    """Évalue une méthode de calibration sur le test set."""
     return {
         "method": name,
         "ece": ece(calibrated, test_o),
@@ -75,7 +77,6 @@ def train_and_evaluate(raw_probs: list[float],
         }
 
     split = int(len(raw_probs) * train_ratio)
-
     train_p = raw_probs[:split]
     train_o = outcomes[:split]
     test_p = raw_probs[split:]
@@ -88,18 +89,15 @@ def train_and_evaluate(raw_probs: list[float],
             "n_test": len(test_p),
         }
 
-    # --- Isotonique ---
     iso = fit_isotonic(train_p, train_o)
-    iso_calibrated = [apply_isotonic(iso, p) for p in test_p]
+    iso_calibrated = [apply_isotonic(iso, p, shrink=1.0) for p in test_p]
     iso_report = _eval_method("isotonic", test_p, test_o, iso_calibrated)
 
-    # --- Beta ---
     beta_params = fit_beta(train_p, train_o)
     beta_calibrated = apply_beta_batch(beta_params, test_p)
     beta_report = _eval_method("beta", test_p, test_o, beta_calibrated)
 
-    # Choix : on privilégie TOUJOURS Isotonic.
-    # Raison : Beta produit des coefficients extrêmes instables.
+    # Isotonic privilégié (plus stable)
     best = iso_report
 
     return {
@@ -121,7 +119,6 @@ def save_calibrator(iso, path: str) -> None:
 
 
 def save_beta_calibrator(params: dict, path: str) -> None:
-    """Sauvegarde le calibrateur Beta en JSON."""
     data = {"type": "beta", **params}
     Path(path).write_text(json.dumps(data))
 

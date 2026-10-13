@@ -18,11 +18,7 @@ DEFAULT_WEIGHTS = {
 
 
 def _edge(prob_calibrated: float, prob_raw: float) -> float:
-    """Edge = différence entre notre estimation calibrée et la brute.
-
-    Positif : on pense mieux que le bookmaker.
-    Négatif : le bookmaker est meilleur que nous.
-    """
+    """Edge = différence entre notre estimation calibrée et la brute."""
     return float(prob_calibrated - prob_raw)
 
 
@@ -104,8 +100,18 @@ def market_dominance(ranked: list[dict]) -> dict:
 
 
 def group_by_family(ranked: list[dict]) -> dict:
-    """Regroupe les marchés par famille."""
-    groups = {"team1": [], "team2": [], "total": [], "multicorner": []}
+    """Regroupe les marchés par famille (corners + buts)."""
+    groups = {
+        # Corners
+        "team1": [],
+        "team2": [],
+        "total": [],
+        "multicorner": [],
+        # Buts
+        "result": [],
+        "goals_total": [],
+        "handicap": [],
+    }
     for m in ranked:
         fam = m.get("family")
         if fam in groups:

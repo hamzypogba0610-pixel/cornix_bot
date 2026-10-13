@@ -35,7 +35,7 @@ def collect_all_pairs(results: list[dict],
     """Extrait TOUS les marchés de chaque match.
 
     sport : 'corners' / 'goals' / None (tous)
-    Utilise prob_raw (probabilité brute) pour éviter le biais circulaire.
+    Utilise prob_raw pour éviter le biais circulaire.
     """
     probs, outcomes = [], []
     for r in results:
@@ -110,11 +110,28 @@ def train_and_evaluate(raw_probs: list[float],
     }
 
 
-def save_calibrator(iso, path: str) -> None:
-    """Sauvegarde le calibrateur isotonique en JSON."""
-    X = iso.X_thresholds_.tolist() if hasattr(iso, "X_thresholds_") else []
-    y = iso.y_thresholds_.tolist() if hasattr(iso, "y_thresholds_") else []
-    data = {"type": "isotonic", "x": X, "y": y}
+def save_calibrator(iso, path: str, n_buckets: int = 25) -> None:
+    """Sauvegarde le calibrateur en agrégant les points par paquets.
+
+    Réduit de 9154 points à ~25 points (JSON compact, mobile-friendly).
+    """
+    if not hasattr(iso, "X_thresholds_") or len(iso.X_thresholds_) == 0:
+        Path(path).write_text(json.dumps({"type": "isotonic", "x": [], "y": []}))
+        return
+
+    X = iso.X_thresholds_
+    y = iso.y_thresholds_
+
+    n = len(X)
+    if n <= n_buckets:
+        x_out = X.tolist()
+        y_out = y.tolist()
+    else:
+        indices = [int(i * (n - 1) / (n_buckets - 1)) for i in range(n_buckets)]
+        x_out = [float(X[i]) for i in indices]
+        y_out = [float(y[i]) for i in indices]
+
+    data = {"type": "isotonic", "x": x_out, "y": y_out}
     Path(path).write_text(json.dumps(data))
 
 

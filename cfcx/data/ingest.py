@@ -25,6 +25,15 @@ def fetch_csv(league_code: str, season: str, season_codes: dict) -> pd.DataFrame
     return pd.read_csv(io.StringIO(r.text), on_bad_lines="skip")
 
 
+def _parse_goals(val) -> int | None:
+    if pd.isna(val):
+        return None
+    try:
+        return int(float(val))
+    except (ValueError, TypeError):
+        return None
+
+
 def parse_matches(df: pd.DataFrame, league_code: str, season: str) -> list[dict]:
     out = []
     for _, row in df.iterrows():
@@ -44,6 +53,8 @@ def parse_matches(df: pd.DataFrame, league_code: str, season: str) -> list[dict]
             "away_team": away,
             "home_corners": int(row["HC"]),
             "away_corners": int(row["AC"]),
+            "home_goals": _parse_goals(row.get("FTHG")),
+            "away_goals": _parse_goals(row.get("FTAG")),
         })
     return out
 
@@ -73,3 +84,28 @@ def ingest_all() -> int:
     total = len(all_rows)
     s.close()
     return total
+
+
+def update_goals() -> int:
+    """Met à jour les buts pour les matchs déjà en base (migration)."""
+    init_db()
+    s = session()
+
+    season_codes = data_config()["season_codes"]
+    updated = 0
+
+    for lg in leagues():
+        for season in seasons():
+            print(f"Updating goals {lg['code']} {season}...")
+            df = fetch_csv(lg["code"], season, season_codes)
+            rows = parse_matches(df, lg["code"], season)
+            for r in rows:
+                existing = s.get(Match, r["match_id"])
+                if existing and existing.home_goals is None:
+                    existing.home_goals = r["home_goals"]
+                    existing.away_goals = r["away_goals"]
+                    updated += 1
+            s.commit()
+
+    s.close()
+    return updated

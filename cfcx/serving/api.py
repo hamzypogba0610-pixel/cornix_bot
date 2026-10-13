@@ -35,6 +35,7 @@ def _market_to_dict(m: dict | None) -> dict | None:
     return {
         "market_id": m.get("market_id"),
         "family": m.get("family"),
+        "sport": m.get("sport"),
         "direction": m.get("direction"),
         "line": m.get("line"),
         "prob": m.get("prob"),
@@ -68,12 +69,17 @@ def stats():
     s = make_session()
     try:
         total = s.execute(select(func.count(Match.match_id))).scalar() or 0
+        with_goals = s.execute(
+            select(func.count(Match.match_id))
+            .where(Match.home_goals.isnot(None))
+        ).scalar() or 0
         leagues = s.execute(
             select(Match.league, func.count(Match.match_id))
             .group_by(Match.league)
         ).all()
         return {
             "total_matches": int(total),
+            "with_goals": int(with_goals),
             "by_league": {lg: int(cnt) for lg, cnt in leagues},
         }
     except Exception as e:
@@ -122,6 +128,9 @@ def predict(req: PredictRequest):
         },
         "lam1": result.get("lam1"),
         "lam2": result.get("lam2"),
+        "lam_h_goals": result.get("lam_h_goals"),
+        "lam_a_goals": result.get("lam_a_goals"),
+        "goals_outcomes": result.get("goals_outcomes", {}),
         "seed": result.get("seed"),
         "dominance": result.get("dominance", {}),
-    }
+}

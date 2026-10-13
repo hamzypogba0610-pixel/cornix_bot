@@ -80,7 +80,20 @@ def ou_markets(h_samples: np.ndarray, a_samples: np.ndarray,
 
 def handicap_markets(h_samples: np.ndarray, a_samples: np.ndarray,
                      lines: list[float] | None = None) -> list[dict]:
-    """Génère les marchés Handicap (asiatique style simple)."""
+    """Génère les marchés Handicap.
+
+    Convention (ligne asiatique) :
+    - line négative  = handicap DOMICILE (ex: -1 => dom doit gagner par 2+)
+    - line positive  = handicap EXTÉRIEUR (ex: +1 => ext peut perdre par 1)
+
+    Pour line négative :
+    - home_cover = (diff > -line)   => diff > 1 si line = -1
+    - away_cover = (diff < -line)
+
+    Pour line positive :
+    - home_cover = (diff > -line)   => diff > -1 si line = +1
+    - away_cover = (diff < -line)
+    """
     if lines is None:
         lines = DEFAULT_HANDICAP_LINES
 
@@ -92,9 +105,27 @@ def handicap_markets(h_samples: np.ndarray, a_samples: np.ndarray,
     markets = []
 
     for line in lines:
-        # Home cover : diff > line
-        p_home = float((diff > line).sum() / n)
-        p_away = float((diff < line).sum() / n)
+        # line représente le handicap DONNÉ AU DOMICILE.
+        # Ex : line = -1  =>  domicile -1 (doit gagner par 2+)
+        #     line = +1  =>  domicile +1 (peut perdre par 1)
+        #     line = -0.5 => domicile -0.5 (doit gagner)
+        #     line = +0.5 => domicile +0.5 (peut faire nul)
+        # Condition home_cover : diff > |line| si line négative
+        #                        diff > -line si line positive (nul possible)
+        # Formule unifiée : diff + line > 0  <=> diff > -line
+
+        threshold = -line
+
+        # Cas spécial -0.5 et +0.5 (pas de nul possible)
+        if line == -0.5:
+            p_home = float((diff >= 1).sum() / n)
+            p_away = float((diff <= 0).sum() / n)
+        elif line == 0.5:
+            p_home = float((diff >= 0).sum() / n)
+            p_away = float((diff <= -1).sum() / n)
+        else:
+            p_home = float((diff > threshold).sum() / n)
+            p_away = float((diff < threshold).sum() / n)
 
         line_str = f"{line:+.1f}".replace("+", "P").replace("-", "M")
 

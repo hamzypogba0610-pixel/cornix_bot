@@ -224,7 +224,6 @@ FORM_HTML_PART1 = """
 
 <script>
 """
-
 const MARGIN_BOOK = 0.03;
 const VAR_MODEL = 0.08 * 0.08;
 const VAR_MARKET = 0.12 * 0.12;
@@ -534,3 +533,467 @@ function computePortfolio() {
   html += '</div>';
   box.innerHTML = html;
 }
+
+function marketBlock(title, m, isBest) {
+  if (!m) return "";
+  const cls = isBest ? "market best" : "market";
+  const justOdds = m.prob > 0 ? (1.0 / m.prob).toFixed(2) : "—";
+
+  LAST_MARKETS.push({
+    market_id: m.market_id,
+    family: m.family,
+    sport: m.sport,
+    direction: m.direction,
+    line: m.line,
+    prob: m.prob,
+    odds: null,
+  });
+
+  return `
+    <div class="${cls}">
+      <div class="market-title">${title} — ${m.market_id}</div>
+      <div class="market-detail">
+        Probabilité calibrée : <span>${fmtPct(m.prob)}</span> |
+        Cote juste : <span>${justOdds}</span><br>
+        Edge modèle : <span>${fmtPct(m.edge)}</span> |
+        Robustesse : <span>${fmtPct(m.rob)}</span>
+      </div>
+      <div class="odds-row">
+        <label>Ta cote :</label>
+        <input type="number" step="0.01" min="1.01" placeholder="1.20"
+               oninput="analyze(this, ${m.prob}, '${m.market_id}', '${m.sport}', '${m.family}', ${m.line || 0});">
+        <span class="verdict none">—</span>
+      </div>
+      <div class="analysis"></div>
+    </div>`;
+}
+
+function submitForm(e) {
+  e.preventDefault();
+  LAST_MARKETS = [];
+  const form = e.target;
+  const data = {
+    home: form.home.value,
+    away: form.away.value,
+    league: form.league.value,
+    date: form.date.value,
+    n_simulations: parseInt(form.n_simulations.value)
+  };
+
+  const result = document.getElementById("result");
+  document.getElementById("portfolio-section").style.display = "none";
+  document.getElementById("portfolio-result").innerHTML = "";
+  result.style.display = "block";
+  result.innerHTML = '<div class="loading">⏳ Analyse en cours... (20-40 secondes)</div>';
+
+  fetch("/predict", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(data)
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.detail) {
+      result.innerHTML = '<div class="card" style="color:#f85149">Erreur : ' + d.detail + '</div>';
+      return;
+    }
+    const decClass = d.decision === "BET" ? "bet" : "nobet";
+    let html = '<div class="card">';
+    html += '<h2>' + d.team1 + ' vs ' + d.team2 + '</h2>';
+    html += '<div style="margin-bottom:12px"><span class="badge ' + decClass + '">' + d.decision + '</span></div>';
+    html += '<div class="market-detail">' + d.reason + '</div>';
+    html += '</div>';
+
+    html += '<div class="card"><h2>🎯 Meilleur marché global</h2>';
+    html += marketBlock("TOP", d.top, true);
+    html += '</div>';
+
+    html += '<div class="card"><h2>🟦 Corners</h2>';
+    html += marketBlock("🏠 Équipe 1", d.top_per_family.team1, false);
+    html += marketBlock("✈️ Équipe 2", d.top_per_family.team2, false);
+    html += marketBlock("🏆 Total", d.top_per_family.total, false);
+    html += marketBlock("🎲 Multi Corner", d.top_per_family.multicorner, false);
+    html += '</div>';
+
+    html += '<div class="card"><h2>⚽ Buts</h2>';
+    html += marketBlock("🎯 1X2", d.top_per_family.result, false);
+    html += marketBlock("📊 Over/Under", d.top_per_family.goals_total, false);
+    html += marketBlock("⚖️ Handicap", d.top_per_family.handicap, false);
+    html += '<div id="coherence-display" style="margin-top:12px;"></div>';
+    if (d.goals_outcomes) {
+      html += '<h3>Répartition 1X2</h3>';
+      html += '<div class="market-detail">';
+      html += '🏠 Domicile : <span>' + fmtPct(d.goals_outcomes.home_win) + '</span> | ';
+      html += '⚖️ Nul : <span>' + fmtPct(d.goals_outcomes.draw) + '</span> | ';
+      html += '✈️ Extérieur : <span>' + fmtPct(d.goals_outcomes.away_win) + '</span>';
+      html += '</div>';
+    }
+    html += '</div>';
+
+    html += '<div class="card"><h2>📈 Technique</h2>';
+    html += '<div class="market-detail">';
+    html += '<b>Corners</b><br>';
+    html += 'λ1 : <span>' + (d.lam1 ? d.lam1.toFixed(2) : "—") + '</span> | ';
+    html += 'λ2 : <span>' + (d.lam2 ? d.lam2.toFixed(2) : "—") + '</span><br>';
+    html += '<b>Buts</b><br>';
+    html += 'λ dom : <span>' + (d.lam_h_goals ? d.lam_h_goals.toFixed(2) : "—") + '</span> | ';
+    html += 'λ ext : <span>' + (d.lam_a_goals ? d.lam_a_goals.toFixed(2) : "—") + '</span><br>';
+    html += 'MDS : <span>' + (d.dominance.mds ? d.dominance.mds.toFixed(3) : "—") + '</span>';
+    html += '</div></div>';
+
+    result.innerHTML = html;
+    document.getElementById("portfolio-section").style.display = "block";
+  })
+  .catch(err => {
+    result.innerHTML = '<div class="card" style="color:#f85149">Erreur réseau : ' + err.message + '</div>';
+  });
+}
+
+document.querySelector('input[name="date"]').valueAsDate = new Date();
+
+
+/* =========================================================
+   MULTI-CORNER 360° ULTIMATE
+   ========================================================= */
+const MC_BLOCKS = [
+  { id: 'mc1d', label: '🏠 Éq1 — 10 matchs à DOMICILE', team: 1, n: 10 },
+  { id: 'mc1g', label: '🏠 Éq1 — 5 matchs GLOBAUX',     team: 1, n: 5  },
+  { id: 'mc2e', label: '✈️ Éq2 — 10 matchs à l\'EXTÉRIEUR', team: 2, n: 10 },
+  { id: 'mc2g', label: '✈️ Éq2 — 5 matchs GLOBAUX',     team: 2, n: 5  },
+];
+
+let MC_DATA = {};
+
+function generateMCForms() {
+  const container = document.getElementById('mc-forms');
+  if (!container) return;
+  let html = '';
+  MC_BLOCKS.forEach(block => {
+    html += `<div class="mc-block" data-block="${block.id}">`;
+    html += `<div class="mc-block-title">${block.label} <span class="badge-info">(${block.n} matchs)</span></div>`;
+    html += `<div class="mc-tabs">`;
+    html += `<div class="mc-tab active" data-tab="grid" onclick="switchMCTab('${block.id}', 'grid')">📋 Grille</div>`;
+    html += `<div class="mc-tab" data-tab="csv" onclick="switchMCTab('${block.id}', 'csv')">📝 CSV</div>`;
+    html += `</div>`;
+    html += `<div class="mc-grid-view" data-view="grid">`;
+    html += `<div class="mc-grid-header"><span>#</span><span>1ʳᵉ MT</span><span>2ᵉ MT</span></div>`;
+    for (let i = 0; i < block.n; i++) {
+      html += `<div class="mc-grid-row">`;
+      html += `<span class="mc-idx">${i + 1}</span>`;
+      html += `<input type="number" min="0" max="20" step="1" data-block="${block.id}" data-idx="${i}" data-half="1" placeholder="0">`;
+      html += `<input type="number" min="0" max="20" step="1" data-block="${block.id}" data-idx="${i}" data-half="2" placeholder="0">`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+    html += `<div class="mc-csv-view" data-view="csv" style="display:none;">`;
+    html += `<textarea class="mc-csv-area" data-block="${block.id}" placeholder="Format : 1ʳᵉ MT, 2ᵉ MT (une ligne par match)"></textarea>`;
+    html += `<div class="mc-hint">Une ligne = un match. Format : A1, A2</div>`;
+    html += `</div>`;
+    html += `</div>`;
+  });
+  container.innerHTML = html;
+}
+
+function switchMCTab(blockId, tab) {
+  const block = document.querySelector(`[data-block="${blockId}"]`);
+  if (!block) return;
+  block.querySelectorAll('.mc-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tab);
+  });
+  block.querySelectorAll('[data-view]').forEach(v => {
+    v.style.display = (v.dataset.view === tab) ? '' : 'none';
+  });
+}
+
+function parseMCCSV(blockId) {
+  const ta = document.querySelector(`textarea[data-block="${blockId}"]`);
+  if (!ta || !ta.value.trim()) return [];
+  const pairs = [];
+  ta.value.trim().split('\n').forEach(line => {
+    const parts = line.split(/[,\t;]+/).map(s => parseFloat(s.trim()));
+    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[0] >= 0 && parts[1] >= 0) {
+      pairs.push([Math.round(parts[0]), Math.round(parts[1])]);
+    }
+  });
+  return pairs;
+}
+
+function getMCData() {
+  const data = {};
+  MC_BLOCKS.forEach(block => {
+    const gridView = document.querySelector(`[data-block="${block.id}"] [data-view="grid"]`);
+    const gridVisible = gridView && gridView.style.display !== 'none';
+
+    let pairs = [];
+    if (gridVisible) {
+      const inputs1 = document.querySelectorAll(`input[data-block="${block.id}"][data-half="1"]`);
+      const inputs2 = document.querySelectorAll(`input[data-block="${block.id}"][data-half="2"]`);
+      for (let i = 0; i < inputs1.length; i++) {
+        const v1 = parseFloat(inputs1[i].value);
+        const v2 = parseFloat(inputs2[i].value);
+        if (!isNaN(v1) && !isNaN(v2) && v1 >= 0 && v2 >= 0) {
+          pairs.push([Math.round(v1), Math.round(v2)]);
+        }
+      }
+    } else {
+      pairs = parseMCCSV(block.id);
+    }
+
+    data[block.id] = { block, pairs };
+  });
+  return data;
+}
+
+/* --- Statistiques descriptives --- */
+function computeStats(pairs) {
+  if (!pairs || pairs.length === 0) return null;
+  const A1 = pairs.map(p => p[0]);
+  const A2 = pairs.map(p => p[1]);
+  const n = pairs.length;
+  const mean1 = A1.reduce((a, b) => a + b, 0) / n;
+  const mean2 = A2.reduce((a, b) => a + b, 0) / n;
+  const var1 = A1.reduce((s, v) => s + (v - mean1) ** 2, 0) / Math.max(1, n - 1);
+  const var2 = A2.reduce((s, v) => s + (v - mean2) ** 2, 0) / Math.max(1, n - 1);
+  const std1 = Math.sqrt(var1);
+  const std2 = Math.sqrt(var2);
+  let cov = 0;
+  for (let i = 0; i < n; i++) cov += (A1[i] - mean1) * (A2[i] - mean2);
+  cov = cov / Math.max(1, n - 1);
+  const rho = (std1 > 1e-9 && std2 > 1e-9) ? cov / (std1 * std2) : 0;
+
+  const products = pairs.map(p => p[0] * p[1]);
+  const zeroCount = products.filter(x => x === 0).length;
+
+  const sorted = [...products].sort((a, b) => a - b);
+  const p10 = sorted[Math.floor(0.10 * n)];
+  const p50 = sorted[Math.floor(0.50 * n)];
+  const p90 = sorted[Math.min(n - 1, Math.floor(0.90 * n))];
+
+  return {
+    n, mean1, mean2, std1, std2, rho, zeroCount,
+    meanProduct: products.reduce((a, b) => a + b, 0) / n,
+    p10, p50, p90,
+  };
+}
+
+/* --- Monte Carlo bivarié (copule gaussienne) --- */
+function simulateBivariate(mean1, mean2, std1, std2, rho, nSims, seed) {
+  const samples = [];
+  const s1 = Math.max(std1, 0.5);
+  const s2 = Math.max(std2, 0.5);
+  let s = seed || 12345;
+  const rand = () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
+  const randn = () => {
+    const u1 = Math.max(1e-9, rand());
+    const u2 = rand();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  };
+  const rho_c = Math.max(-0.95, Math.min(0.95, rho));
+  const a = Math.sqrt(1 - rho_c * rho_c);
+  for (let i = 0; i < nSims; i++) {
+    const z1 = randn();
+    const z2 = rho_c * z1 + a * randn();
+    let a1 = Math.round(mean1 + s1 * z1);
+    let a2 = Math.round(mean2 + s2 * z2);
+    if (a1 < 0) a1 = 0;
+    if (a2 < 0) a2 = 0;
+    samples.push(a1 * a2);
+  }
+  return samples;
+}
+
+/* --- Probabilités Over/Under --- */
+function mcProbabilities(samples) {
+  const sorted = [...samples].sort((a, b) => a - b);
+  const n = sorted.length;
+  const mean = samples.reduce((a, b) => a + b, 0) / n;
+  const p10 = sorted[Math.floor(0.10 * n)];
+  const p50 = sorted[Math.floor(0.50 * n)];
+  const p90 = sorted[Math.min(n - 1, Math.floor(0.90 * n))];
+
+  const lines = [5.5, 10.5, 15.5, 20.5, 25.5, 30.5, 35.5, 40.5];
+  const probs = {};
+  lines.forEach(L => {
+    const threshold = Math.floor(L + 0.5);
+    const over = samples.filter(x => x >= threshold).length / n;
+    probs[L] = { over, under: 1 - over };
+  });
+
+  return { mean, p10, p50, p90, probs };
+}
+
+/* --- Affichage résultat MC --- */
+function renderMCBlock(title, samples, teamSide) {
+  const stats = mcProbabilities(samples);
+  let html = `<div class="mc-result-item" data-mc="${teamSide}">`;
+  html += `<div class="mc-result-title">${title}</div>`;
+  html += `<div class="mc-result-detail">`;
+  html += `Moyenne : <span>${stats.mean.toFixed(2)}</span> | `;
+  html += `Médiane : <span>${stats.p50}</span><br>`;
+  html += `P10 : <span>${stats.p10}</span> | P90 : <span>${stats.p90}</span>`;
+  html += `</div>`;
+
+  html += `<div class="mc-dist-bar"><div class="mc-dist-fill" style="width:100%"></div></div>`;
+  html += `<div class="mc-dist-labels"><span>${stats.p10}</span><span>${stats.p50}</span><span>${stats.p90}</span></div>`;
+
+  html += `<div style="margin-top:10px; font-size:12px; color:#8b949e;">`;
+  html += `<b>Probabilités Over :</b><br>`;
+  [5.5, 10.5, 15.5, 20.5, 25.5, 30.5, 35.5].forEach(L => {
+    const p = stats.probs[L];
+    if (p) {
+      html += `Over ${L} : <span style="color:#58a6ff">${(p.over * 100).toFixed(1)}%</span> | `;
+      html += `Under ${L} : <span style="color:#8b949e">${(p.under * 100).toFixed(1)}%</span><br>`;
+    }
+  });
+  html += `</div>`;
+
+  const mid = `MC_${teamSide}`;
+  const pOver = stats.probs[20.5] ? stats.probs[20.5].over : 0.5;
+  const pUnder = 1 - pOver;
+  const best = pOver >= pUnder
+    ? { dir: 'over', p: pOver, line: 20.5 }
+    : { dir: 'under', p: pUnder, line: 20.5 };
+
+  html += `<div class="odds-row" style="margin-top:10px; border-top:1px solid #30363d; padding-top:10px;">`;
+  html += `<label>Cote ${best.dir.toUpperCase()} ${best.line} :</label>`;
+  html += `<input type="number" step="0.01" min="1.01" placeholder="1.50" `;
+  html += `oninput="analyzeMC(this, '${mid}', ${best.p});">`;
+  html += `<span class="verdict none">—</span>`;
+  html += `</div>`;
+  html += `<div class="analysis"></div>`;
+
+  html += `</div>`;
+  return html;
+}
+
+function analyzeMC(el, marketId, prob) {
+  const parent = el.closest('.mc-result-item');
+  const verdict = el.parentElement.querySelector('.verdict');
+  const analysis = parent.querySelector('.analysis');
+  const odds = parseFloat(el.value);
+
+  const entry = LAST_MARKETS.find(x => x.market_id === marketId);
+  if (!entry) {
+    LAST_MARKETS.push({
+      market_id: marketId,
+      family: 'multicorner',
+      sport: 'corners',
+      direction: 'over',
+      line: 20.5,
+      prob: prob,
+      odds: null,
+    });
+  } else {
+    entry.prob = prob;
+    entry.odds = (!odds || odds <= 1) ? null : odds;
+  }
+
+  if (!odds || odds <= 1) {
+    verdict.textContent = "—";
+    verdict.className = "verdict none";
+    if (analysis) analysis.classList.remove("show");
+    return;
+  }
+
+  const p_imp = impliedFromOdds(odds);
+  const p_market = fairFromImplied(p_imp);
+  const p_post = bayesianFusion(prob, p_market);
+  const ev = computeEV(p_post, odds);
+  const kelly_raw = kellyFraction(p_post, odds);
+  const kelly = Math.max(0, kelly_raw * KELLY_SAFE);
+  const grade = gradeValue(ev, kelly, p_post, p_market);
+
+  if (ev > 0) {
+    verdict.textContent = "✅ BET (+" + (ev * 100).toFixed(1) + "%)";
+    verdict.className = "verdict ok";
+  } else {
+    verdict.textContent = "❌ NO BET (" + (ev * 100).toFixed(1) + "%)";
+    verdict.className = "verdict ko";
+  }
+
+  if (!analysis) return;
+  analysis.innerHTML = `
+    <div class="analysis-grid">
+      <div class="k">Prob implicite :</div>
+      <div class="v">${fmtPct(p_imp)}</div>
+      <div class="k">Prob juste :</div>
+      <div class="v">${fmtPct(p_market)}</div>
+      <div class="k">Prob modèle :</div>
+      <div class="v">${fmtPct(prob)}</div>
+      <div class="k">Prob postérieure :</div>
+      <div class="v">${fmtPct(p_post)}</div>
+      <div class="k">Edge bayésien :</div>
+      <div class="v">${fmtPct(p_post - p_market)}</div>
+      <div class="k">EV :</div>
+      <div class="v">${(ev * 100).toFixed(2)}%</div>
+      <div class="k">Kelly :</div>
+      <div class="v">${(kelly * 100).toFixed(1)}%</div>
+    </div>
+    <div class="grade-badge grade-${grade}">Grade ${grade}</div>
+  `;
+  analysis.classList.add("show");
+}
+
+/* --- Fonction principale --- */
+function computeMultiCorner() {
+  const box = document.getElementById('mc-result');
+  const data = getMCData();
+
+  const hasE1 = data['mc1d'].pairs.length >= 3 || data['mc1g'].pairs.length >= 3;
+  const hasE2 = data['mc2e'].pairs.length >= 3 || data['mc2g'].pairs.length >= 3;
+
+  if (!hasE1 || !hasE2) {
+    box.innerHTML = '<div class="card" style="color:#f85149">Remplis au moins 3 matchs pour chaque équipe.</div>';
+    return;
+  }
+
+  const s1d = computeStats(data['mc1d'].pairs);
+  const s1g = computeStats(data['mc1g'].pairs);
+  const s2e = computeStats(data['mc2e'].pairs);
+  const s2g = computeStats(data['mc2g'].pairs);
+
+  const stats1 = s1d || s1g;
+  const stats2 = s2e || s2g;
+  const n1 = data['mc1d'].pairs.length || data['mc1g'].pairs.length;
+  const n2 = data['mc2e'].pairs.length || data['mc2g'].pairs.length;
+
+  let coherenceWarn = '';
+  if (s1d && s1g && Math.abs(s1d.meanProduct - s1g.meanProduct) / Math.max(1, s1g.meanProduct) > 0.30) {
+    coherenceWarn += `<div class="corr-warning">⚠️ Éq1 : écart > 30% entre domicile (${s1d.meanProduct.toFixed(1)}) et global (${s1g.meanProduct.toFixed(1)})</div>`;
+  }
+  if (s2e && s2g && Math.abs(s2e.meanProduct - s2g.meanProduct) / Math.max(1, s2g.meanProduct) > 0.30) {
+    coherenceWarn += `<div class="corr-warning">⚠️ Éq2 : écart > 30% entre extérieur (${s2e.meanProduct.toFixed(1)}) et global (${s2g.meanProduct.toFixed(1)})</div>`;
+  }
+
+  const N_SIMS = 10000;
+  const mc1 = simulateBivariate(stats1.mean1, stats1.mean2, stats1.std1, stats1.std2, stats1.rho, N_SIMS, 42);
+  const mc2 = simulateBivariate(stats2.mean1, stats2.mean2, stats2.std1, stats2.std2, stats2.rho, N_SIMS, 43);
+  const mcGlobal = mc1.map((v, i) => v + mc2[i]);
+
+  let html = '<div class="card">';
+  html += '<h2>🎲 Résultats Multi-Corner</h2>';
+  html += `<div class="mc-result-detail" style="margin-bottom:12px;">`;
+  html += `Éq1 : ${n1} matchs (ρ=${stats1.rho.toFixed(2)}, P(0)=${(stats1.zeroCount / stats1.n * 100).toFixed(0)}%)<br>`;
+  html += `Éq2 : ${n2} matchs (ρ=${stats2.rho.toFixed(2)}, P(0)=${(stats2.zeroCount / stats2.n * 100).toFixed(0)}%)`;
+  html += `</div>`;
+  if (coherenceWarn) html += coherenceWarn;
+  html += renderMCBlock('🏠 MC Équipe 1 = A1 × A2', mc1, 'T1');
+  html += renderMCBlock('✈️ MC Équipe 2 = B1 × B2', mc2, 'T2');
+  html += renderMCBlock('🌍 MC Global = MC1 + MC2', mcGlobal, 'GLOBAL');
+  html += '</div>';
+
+  box.innerHTML = html;
+}
+
+/* --- Initialisation --- */
+generateMCForms();
+</script>
+</body>
+</html>
+"""
+
+
+FORM_HTML = FORM_HTML_PART1 + FORM_HTML_PART2

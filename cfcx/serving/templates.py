@@ -68,13 +68,27 @@ FORM_HTML = """
     <div id="mc-result" style="margin-top:14px;"></div>
   </details>
 
+  <details class="mc-section" id="shadow-section">
+    <summary>Cornix Shadow — carnet secret + calibration en ligne</summary>
+    <p class="mc-hint" style="margin-top:0; margin-bottom:14px;">
+      Enregistre tes analyses et leurs resultats. Le bot calcule son VRAI track record
+      (win rate, ROI, ECE) et entraine une calibration Temperature Scaling en direct.
+      Tout est stocke localement sur ton telephone.
+    </p>
+    <div style="display:flex; gap:8px; margin-bottom:14px;">
+      <button type="button" class="tertiary" style="flex:1;" onclick="shadowSaveCurrent()">Enregistrer analyse</button>
+      <button type="button" class="secondary" style="flex:1;" onclick="shadowExport()">Exporter JSON</button>
+    </div>
+    <div id="shadow-stats"></div>
+  </details>
+
   <div class="footnote">
     Kelly-Bayesian Portfolio Engine — fusion bayesienne + de-marginalisation + Kelly multi-actifs<br>
-    Calibrateurs : corners (9154 paires) et buts (3327 paires) — Isotonic.
+    Calibrateurs : corners (9154 paires) et buts (3327 paires) — Isotonic.<br>
+    Shadow + Online Temperature Scaling : calibration en continu.
   </div>
 </div>
 <script src="/static/app.js"></script>
 </body>
 </html>
 """
-

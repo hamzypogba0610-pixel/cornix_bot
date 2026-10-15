@@ -1,7 +1,9 @@
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
@@ -10,8 +12,13 @@ from cfcx.pipeline import run as run_pipeline
 from cfcx.serving.templates import FORM_HTML
 
 
-app = FastAPI(title="CFC-X API", version="0.1.0")
+app = FastAPI(title="CFC-X API", version="0.2.0")
 START_TIME = datetime.now(UTC)
+
+# Monter le dossier static (CSS + JS)
+_STATIC_DIR = Path(__file__).parent / "static"
+if _STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 
 class PredictRequest(BaseModel):
@@ -65,7 +72,6 @@ def health():
 
 @app.get("/stats")
 def stats():
-    """Statistiques sur la base de données."""
     s = make_session()
     try:
         total = s.execute(select(func.count(Match.match_id))).scalar() or 0
@@ -133,4 +139,4 @@ def predict(req: PredictRequest):
         "goals_outcomes": result.get("goals_outcomes", {}),
         "seed": result.get("seed"),
         "dominance": result.get("dominance", {}),
-}
+                                                   }

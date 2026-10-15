@@ -156,7 +156,7 @@ function correlationHeuristic(m1, m2) {
   if (sameFam && sameDir) return 0.55;
   if (sameFam) return 0.10;
   return 0.05;
-    }
+                  }
 
 function matrixInvert(M) {
   const n = M.length;
@@ -308,7 +308,7 @@ function marketBlock(title, m, isBest) {
     direction: m.direction,
     line: m.line,
     prob: m.prob,
-    odds: null,
+    odds: null
   });
 
   return '<div class="' + cls + '">' +
@@ -729,10 +729,275 @@ function computeMultiCorner() {
   html += '</div>';
 
   box.innerHTML = html;
+        }
+
+/* =========================================================
+   CORNIX SHADOW — Track record + Temperature Scaling
+   ========================================================= */
+const SHADOW_KEY = 'cornix_shadow_v1';
+
+function shadowLoad() {
+  try {
+    const raw = localStorage.getItem(SHADOW_KEY);
+    return raw ? JSON.parse(raw) : { bets: [] };
+  } catch (e) {
+    return { bets: [] };
+  }
 }
 
+function shadowSave(data) {
+  try {
+    localStorage.setItem(SHADOW_KEY, JSON.stringify(data));
+  } catch (e) {}
+}
+
+function shadowSaveCurrent() {
+  if (!LAST_MARKETS || LAST_MARKETS.length === 0) {
+    alert('Analyse un match d\'abord.');
+    return;
+  }
+  const form = document.querySelector('form');
+  const home = form.home.value || '?';
+  const away = form.away.value || '?';
+  const data = shadowLoad();
+
+  let count = 0;
+  LAST_MARKETS.forEach(m => {
+    if (m.odds && m.odds > 1) {
+      data.bets.push({
+        id: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+        match: home + ' vs ' + away,
+        market: m.market_id,
+        prob: m.prob,
+        odds: m.odds,
+        date: new Date().toISOString(),
+        result: null
+      });
+      count++;
+    }
+  });
+
+  shadowSave(data);
+  shadowRenderStats();
+  alert(count + ' pari(s) enregistre(s) dans Shadow.');
+}
+
+function shadowMarkResult(betId, result) {
+  const data = shadowLoad();
+  const bet = data.bets.find(b => b.id === betId);
+  if (!bet) return;
+  bet.result = result;
+  shadowSave(data);
+  shadowRenderStats();
+}
+
+function shadowComputeMetrics() {
+  const data = shadowLoad();
+  const resolved = data.bets.filter(b => b.result === 'win' || b.result === 'loss');
+  if (resolved.length === 0) {
+    return { n: 0, wins: 0, losses: 0, winRate: 0, roi: 0, ece: 0, profit: 0, bins: null };
+  }
+
+  let wins = 0, losses = 0, profit = 0, totalStake = 0;
+  const bins = [];
+  for (let i = 0; i < 10; i++) bins.push({ p: 0, o: 0, n: 0 });
+
+  resolved.forEach(b => {
+    totalStake += 1;
+    const isWin = b.result === 'win';
+    if (isWin) {
+      wins++;
+      profit += (b.odds - 1);
+    } else {
+      losses++;
+      profit -= 1;
+    }
+    const binIdx = Math.min(9, Math.floor(b.prob * 10));
+    bins[binIdx].p += b.prob;
+    bins[binIdx].o += isWin ? 1 : 0;
+    bins[binIdx].n += 1;
+  });
+
+  let ece = 0;
+  bins.forEach(bin => {
+    if (bin.n > 0) {
+      const avgP = bin.p / bin.n;
+      const avgO = bin.o / bin.n;
+      ece += (bin.n / resolved.length) * Math.abs(avgP - avgO);
+    }
+  });
+
+  return {
+    n: resolved.length,
+    wins: wins,
+    losses: losses,
+    winRate: wins / resolved.length,
+    roi: profit / totalStake,
+    profit: profit,
+    ece: ece,
+    bins: bins
+  };
+}
+
+function shadowRenderStats() {
+  const box = document.getElementById('shadow-stats');
+  if (!box) return;
+  const data = shadowLoad();
+  const m = shadowComputeMetrics();
+
+  let html = '';
+
+  if (data.bets.length === 0) {
+    html = '<div class="shadow-empty">Aucun pari enregistre.<br>Analyse un match, saisis une cote, puis clique "Enregistrer analyse".</div>';
+    box.innerHTML = html;
+    return;
+  }
+
+  if (m.n > 0) {
+    const roiClass = m.roi > 0 ? 'good' : (m.roi < 0 ? 'bad' : 'neutral');
+    const wrClass = m.winRate > 0.55 ? 'good' : (m.winRate < 0.45 ? 'bad' : 'neutral');
+    const eceClass = m.ece < 0.05 ? 'good' : (m.ece > 0.10 ? 'bad' : 'neutral');
+
+    html += '<div class="shadow-stats-grid">';
+    html += '<div class="k">Paris resolus :</div><div class="v">' + m.n + '</div>';
+    html += '<div class="k">Gagnes :</div><div class="v good">' + m.wins + '</div>';
+    html += '<div class="k">Perdus :</div><div class="v bad">' + m.losses + '</div>';
+    html += '<div class="k">Win rate :</div><div class="v ' + wrClass + '">' + (m.winRate * 100).toFixed(1) + '%</div>';
+    html += '<div class="k">ROI reel :</div><div class="v ' + roiClass + '">' + (m.roi >= 0 ? '+' : '') + (m.roi * 100).toFixed(2) + '%</div>';
+    html += '<div class="k">Profit (unites) :</div><div class="v ' + roiClass + '">' + (m.profit >= 0 ? '+' : '') + m.profit.toFixed(2) + '</div>';
+    html += '<div class="k">ECE reel :</div><div class="v ' + eceClass + '">' + m.ece.toFixed(4) + '</div>';
+    html += '<div class="k">Total analyses :</div><div class="v">' + data.bets.length + '</div>';
+    html += '</div>';
+
+    html += shadowRenderReliability(m.bins);
+  }
+
+  html += '<div style="margin-top:12px; font-size:12px; color:#8b949e; text-transform:uppercase; letter-spacing:0.5px;">Derniers paris</div>';
+  const recent = [].concat(data.bets).reverse().slice(0, 15);
+  recent.forEach(b => {
+    const cls = b.result === 'win' ? 'win' : (b.result === 'loss' ? 'loss' : '');
+    const resolved = b.result ? 'resolved' : '';
+    html += '<div class="shadow-bet ' + cls + ' ' + resolved + '">';
+    html += '<div class="match">' + b.match + '</div>';
+    html += '<div class="mkt">' + b.market + '</div>';
+    html += '<div class="odds">' + b.odds.toFixed(2) + '</div>';
+    if (b.result === 'win') {
+      html += '<div class="result-badge win">WIN</div>';
+    } else if (b.result === 'loss') {
+      html += '<div class="result-badge loss">LOSS</div>';
+    } else {
+      html += '<div class="actions">';
+      html += '<button class="win" onclick="shadowMarkResult(\'' + b.id + '\', \'win\')">V</button>';
+      html += '<button class="loss" onclick="shadowMarkResult(\'' + b.id + '\', \'loss\')">X</button>';
+      html += '</div>';
+    }
+    html += '</div>';
+  });
+
+  box.innerHTML = html;
+}
+
+function shadowRenderReliability(bins) {
+  if (!bins) return '';
+  let html = '<div class="reliability-chart">';
+  html += '<h4>Courbe de fiabilite (predite vs reelle)</h4>';
+  bins.forEach((bin, i) => {
+    if (bin.n === 0) return;
+    const avgP = bin.p / bin.n;
+    const avgO = bin.o / bin.n;
+    const lo = (i * 10) + '%';
+    const hi = ((i + 1) * 10) + '%';
+    html += '<div class="reliability-bar-row">';
+    html += '<div class="label">' + lo + '-' + hi + '</div>';
+    html += '<div class="bar-bg">';
+    html += '<div class="bar-pred" style="width:' + (avgP * 100) + '%"></div>';
+    html += '<div class="bar-real" style="width:' + (avgO * 100) + '%"></div>';
+    html += '</div>';
+    html += '<div class="val">' + (avgO * 100).toFixed(0) + '%/' + (avgP * 100).toFixed(0) + '%</div>';
+    html += '</div>';
+  });
+  html += '<div style="font-size:10px; color:#6e7681; margin-top:8px;">Vert = reelle, Bleu = predite. Si alignees : bien calibre.</div>';
+  html += '</div>';
+  return html;
+}
+
+function shadowExport() {
+  const data = shadowLoad();
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'cornix_shadow_' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* =========================================================
+   ONLINE TEMPERATURE SCALING
+   ========================================================= */
+function sigmoid(x) {
+  return 1 / (1 + Math.exp(-Math.max(-50, Math.min(50, x))));
+}
+
+function logit(p) {
+  const eps = 1e-9;
+  const pc = Math.max(eps, Math.min(1 - eps, p));
+  return Math.log(pc / (1 - pc));
+}
+
+function fitTemperature(bets) {
+  const resolved = bets.filter(b => b.result === 'win' || b.result === 'loss');
+  if (resolved.length < 10) {
+    return { T: 1.0, n: resolved.length, applied: false };
+  }
+
+  let T = 1.0;
+  const lr = 0.05;
+  const iters = 200;
+
+  for (let it = 0; it < iters; it++) {
+    let grad = 0;
+    resolved.forEach(b => {
+      const logitP = logit(b.prob);
+      const z = logitP / T;
+      const p_cal = sigmoid(z);
+      const y = b.result === 'win' ? 1 : 0;
+      grad += (p_cal - y) * (-logitP / (T * T));
+    });
+    T -= lr * grad / resolved.length;
+    T = Math.max(0.3, Math.min(3.0, T));
+  }
+
+  return { T: T, n: resolved.length, applied: true };
+}
+
+function applyTemperature(prob, T) {
+  if (!T || T === 1.0) return prob;
+  const z = logit(prob) / T;
+  return sigmoid(z);
+}
+
+/* =========================================================
+   INIT + HOOK TEMPERATURE
+   ========================================================= */
 document.addEventListener('DOMContentLoaded', function() {
   const dateInput = document.querySelector('input[name="date"]');
   if (dateInput) dateInput.valueAsDate = new Date();
   generateMCForms();
+  shadowRenderStats();
 });
+
+const _origAnalyze = analyze;
+analyze = function(el, p_model, marketId, sport, family, line) {
+  const data = shadowLoad();
+  const metrics = shadowComputeMetrics();
+  if (metrics.n >= 10) {
+    const temp = fitTemperature(data.bets);
+    if (temp.applied) {
+      p_model = applyTemperature(p_model, temp.T);
+    }
+  }
+  _origAnalyze(el, p_model, marketId, sport, family, line);
+};

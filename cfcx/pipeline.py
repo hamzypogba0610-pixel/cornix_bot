@@ -25,11 +25,9 @@ DEFAULT_SEED = 42
 CALIBRATOR_CORNERS_PATH = "configs/calibrator.json"
 CALIBRATOR_GOALS_PATH = "configs/calibrator_goals.json"
 
-# Boosts de base (si cotes 1X2 absentes)
 HOME_BOOST = 1.10
 AWAY_FACTOR = 0.91
 
-# Facteur d'amplification du boost favori (si cotes 1X2 présentes)
 FAVORITE_AMPLITUDE = 0.30
 
 LEAGUE_GOALS_AVG = 1.35
@@ -86,7 +84,6 @@ def _apply_calibration(prob: float, sport: str = "corners") -> float:
 
 
 def _fair_probs_from_1x2(odds_1: float, odds_x: float, odds_2: float):
-    """Dé-marginalise les cotes 1X2 pour obtenir les probas justes."""
     try:
         inv_1 = 1.0 / odds_1
         inv_x = 1.0 / odds_x
@@ -100,11 +97,6 @@ def _fair_probs_from_1x2(odds_1: float, odds_x: float, odds_2: float):
 
 
 def _compute_favorite_boost(odds_1x2: dict | None) -> tuple[float, float]:
-    """Retourne (boost_eq1, boost_eq2).
-
-    Si cotes 1X2 fournies : boost proportionnel à l'écart des probas justes.
-    Sinon : boost fixe domicile/extérieur.
-    """
     if odds_1x2 is None:
         return (HOME_BOOST, AWAY_FACTOR)
 
@@ -119,17 +111,15 @@ def _compute_favorite_boost(odds_1x2: dict | None) -> tuple[float, float]:
     if probs is None:
         return (HOME_BOOST, AWAY_FACTOR)
 
-    p1, px, p2 = probs
+    p1, _px, p2 = probs
     diff = p1 - p2
 
     boost1 = 1.0 + FAVORITE_AMPLITUDE * diff
     boost2 = 1.0 - FAVORITE_AMPLITUDE * diff
 
-    # Garde-fous : éviter extrêmes
     boost1 = max(0.70, min(1.40, boost1))
     boost2 = max(0.70, min(1.40, boost2))
 
-    # Petit boost domicile résiduel (+3% Eq1, -3% Eq2)
     boost1 *= 1.03
     boost2 *= 0.97
 
@@ -148,16 +138,6 @@ def run(s, team1: str, team2: str, league: str,
         n_simulations: int = 10000,
         seed: int | None = DEFAULT_SEED,
         odds_1x2: dict | None = None) -> dict:
-    """Pipeline complet : corners + buts.
-
-    team1 = équipe à domicile
-    team2 = équipe à l'extérieur
-    odds_1x2 : {"odds_1": float, "odds_x": float, "odds_2": float} ou None
-    """
-
-    # ========================================================
-    # 1. ANALYSE CORNERS
-    # ========================================================
     prior = league_prior(s, league, match_date)
     lg_stats = league_stats(s, league, match_date)
     lg_avg = prior["mu"]
@@ -175,7 +155,6 @@ def run(s, team1: str, team2: str, league: str,
     lam1_base = m["expected_c1"]
     lam2_base = m["expected_c2"]
 
-    # Boost favori (auto si cotes 1X2, sinon fixe)
     boost1, boost2 = _compute_favorite_boost(odds_1x2)
     lam1 = lam1_base * boost1
     lam2 = lam2_base * boost2
@@ -195,9 +174,6 @@ def run(s, team1: str, team2: str, league: str,
     for mk in markets_corners:
         mk["sport"] = "corners"
 
-    # ========================================================
-    # 2. ANALYSE BUTS
-    # ========================================================
     gdna1 = goal_dna(s, team1, league, match_date)
     gdna2 = goal_dna(s, team2, league, match_date)
 
@@ -225,18 +201,12 @@ def run(s, team1: str, team2: str, league: str,
     for mk in markets_goals:
         mk["sport"] = "goals"
 
-    # ========================================================
-    # 3. FUSION + CALIBRATION
-    # ========================================================
     all_markets_raw = markets_corners + markets_goals
 
     for mk in all_markets_raw:
         mk["prob_raw"] = mk["prob"]
         mk["prob"] = _apply_calibration(mk["prob_raw"], sport=mk["sport"])
 
-    # ========================================================
-    # 4. SCORING
-    # ========================================================
     scored = []
     for mk in all_markets_raw:
         p = mk["prob"]
@@ -256,9 +226,6 @@ def run(s, team1: str, team2: str, league: str,
 
     all_markets = scored
 
-    # ========================================================
-    # 5. DÉCISION
-    # ========================================================
     result = judge(scored)
 
     abstain, reason = should_abstain(
@@ -269,9 +236,6 @@ def run(s, team1: str, team2: str, league: str,
         result["decision"] = "NO_BET"
         result["reason"] = reason
 
-    # ========================================================
-    # 6. MÉTADONNÉES
-    # ========================================================
     result["team1"] = team1
     result["team2"] = team2
     result["league"] = league

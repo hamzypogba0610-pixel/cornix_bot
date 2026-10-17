@@ -1,5 +1,6 @@
 from datetime import date
 from pathlib import Path
+import math
 
 from cfcx.data.store import session as make_session
 from cfcx.features.corner_dna import corner_dna
@@ -29,6 +30,7 @@ HOME_BOOST = 1.10
 AWAY_FACTOR = 0.91
 
 FAVORITE_AMPLITUDE = 0.30
+H2H_WEIGHT = 0.30
 
 LEAGUE_GOALS_AVG = 1.35
 
@@ -126,6 +128,94 @@ def _compute_favorite_boost(odds_1x2: dict | None) -> tuple[float, float]:
     return (boost1, boost2)
 
 
+def _compute_h2h_adjustment(h2h: dict | None):
+    """Calcule les lambda équivalents H2H et retourne un dict.
+
+    h2h = {
+      "matches": [
+        {"c1mt_1": int, "c1mt_2": int, "c2mt_1": int, "c2mt_2": int,
+         "b1mt_1": int, "b1mt_2": int, "b2mt_1": int, "b2mt_2": int},
+        ...
+      ]
+    }
+    """
+    if not h2h or not h2h.get("matches"):
+        return None
+
+    matches = h2h["matches"]
+    n = len(matches)
+    if n == 0:
+        return None
+
+    mc1_list = []
+    mc2_list = []
+    goals1_list = []
+    goals2_list = []
+    corners1_total = []
+    corners2_total = []
+    goals1_mt1 = []
+    goals1_mt2 = []
+    goals2_mt1 = []
+    goals2_mt2 = []
+
+    for m in matches:
+        try:
+            c1_mt1 = int(m.get("c1mt_1", 0))
+            c1_mt2 = int(m.get("c1mt_2", 0))
+            c2_mt1 = int(m.get("c2mt_1", 0))
+            c2_mt2 = int(m.get("c2mt_2", 0))
+            b1_mt1 = int(m.get("b1mt_1", 0))
+            b1_mt2 = int(m.get("b1mt_2", 0))
+            b2_mt1 = int(m.get("b2mt_1", 0))
+            b2_mt2 = int(m.get("b2mt_2", 0))
+        except (ValueError, TypeError):
+            continue
+
+        mc1_list.append(c1_mt1 * c1_mt2)
+        mc2_list.append(c2_mt1 * c2_mt2)
+        corners1_total.append(c1_mt1 + c1_mt2)
+        corners2_total.append(c2_mt1 + c2_mt2)
+        goals1_list.append(b1_mt1 + b1_mt2)
+        goals2_list.append(b2_mt1 + b2_mt2)
+        goals1_mt1.append(b1_mt1)
+        goals1_mt2.append(b1_mt2)
+        goals2_mt1.append(b2_mt1)
+        goals2_mt2.append(b2_mt2)
+
+    if not mc1_list:
+        return None
+
+    def avg(lst):
+        return sum(lst) / len(lst) if lst else 0.0
+
+    mc1_avg = avg(mc1_list)
+    mc2_avg = avg(mc2_list)
+
+    corners1_avg = avg(corners1_total)
+    corners2_avg = avg(corners2_total)
+
+    goals1_avg = avg(goals1_list)
+    goals2_avg = avg(goals2_list)
+
+    return {
+        "n_matches": len(mc1_list),
+        "mc1_avg": mc1_avg,
+        "mc2_avg": mc2_avg,
+        "mc_global_avg": mc1_avg + mc2_avg,
+        "corners1_avg": corners1_avg,
+        "corners2_avg": corners2_avg,
+        "goals1_avg": goals1_avg,
+        "goals2_avg": goals2_avg,
+    }
+
+
+def _blend_lambdas(lam_model: float, lam_h2h: float | None) -> float:
+    """Mélange 70% modèle / 30% H2H."""
+    if lam_h2h is None or lam_h2h <= 0:
+        return lam_model
+    return (1.0 - H2H_WEIGHT) * lam_model + H2H_WEIGHT * lam_h2h
+
+
 def _adjust_goals_intensity(atk_for: float, def_against: float,
                             league_avg: float) -> float:
     if league_avg <= 0:
@@ -137,7 +227,8 @@ def run(s, team1: str, team2: str, league: str,
         match_date: date,
         n_simulations: int = 10000,
         seed: int | None = DEFAULT_SEED,
-        odds_1x2: dict | None = None) -> dict:
+        odds_1x2: dict | None = None,
+        h2h: dict | None = None) -> dict:
     prior = league_prior(s, league, match_date)
     lg_stats = league_stats(s, league, match_date)
     lg_avg = prior["mu"]
@@ -158,6 +249,11 @@ def run(s, team1: str, team2: str, league: str,
     boost1, boost2 = _compute_favorite_boost(odds_1x2)
     lam1 = lam1_base * boost1
     lam2 = lam2_base * boost2
+
+    h2h_stats = _compute_h2h_adjustment(h2h)
+    if h2h_stats is not None:
+        lam1 = _blend_lambdas(lam1, h2h_stats["corners1_avg"])
+        lam2 = _blend_lambdas(lam2, h2h_stats["corners2_avg"])
 
     jd = joint_distribution(
         lam1=lam1, lam2=lam2,
@@ -187,6 +283,10 @@ def run(s, team1: str, team2: str, league: str,
 
     lam_h_goals = lam_h_goals_base * boost1
     lam_a_goals = lam_a_goals_base * boost2
+
+    if h2h_stats is not None:
+        lam_h_goals = _blend_lambdas(lam_h_goals, h2h_stats["goals1_avg"])
+        lam_a_goals = _blend_lambdas(lam_a_goals, h2h_stats["goals2_avg"])
 
     jg = joint_distribution_goals(
         lam_h=lam_h_goals, lam_a=lam_a_goals,
@@ -249,6 +349,7 @@ def run(s, team1: str, team2: str, league: str,
     result["all_markets"] = all_markets
     result["boost1"] = boost1
     result["boost2"] = boost2
+    result["h2h_stats"] = h2h_stats
 
     return result
 
@@ -257,11 +358,12 @@ def run_simple(team1: str, team2: str, league: str,
                match_date: date,
                n_simulations: int = 10000,
                seed: int | None = DEFAULT_SEED,
-               odds_1x2: dict | None = None) -> dict:
+               odds_1x2: dict | None = None,
+               h2h: dict | None = None) -> dict:
     s = make_session()
     try:
         return run(s, team1, team2, league, match_date,
                    n_simulations=n_simulations, seed=seed,
-                   odds_1x2=odds_1x2)
+                   odds_1x2=odds_1x2, h2h=h2h)
     finally:
         s.close()

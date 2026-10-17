@@ -18,7 +18,7 @@ FORM_HTML = """
       <label>Equipe 1 (domicile)</label>
       <input name="home" placeholder="Ex: Liverpool" required>
       <label>Equipe 2 (exterieur)</label>
-      <input name="away" placeholder="Ex: Arsenal" required>
+      <input name="away" placeholder="Ex: Everton" required>
       <div class="row">
         <div>
           <label>Championnat</label>
@@ -36,6 +36,60 @@ FORM_HTML = """
         </div>
       </div>
     </div>
+
+    <details class="mc-section" id="book-section">
+      <summary>Lignes equilibrees + Cotes 1X2 (recommande)</summary>
+      <p class="mc-hint" style="margin-top:0; margin-bottom:14px;">
+        Saisis la ligne ou les cotes Over/Under sont presque identiques (~1.90/1.90)
+        sur ton bookmaker. Le bot utilise le favori des cotes 1X2 pour ajuster
+        automatiquement les intensites. Informations memorisees.
+      </p>
+
+      <h3>Lignes equilibrees</h3>
+      <div class="row">
+        <div>
+          <label>Eq1 corners</label>
+          <input name="line_team1" type="number" step="0.5" placeholder="10.5">
+        </div>
+        <div>
+          <label>Eq2 corners</label>
+          <input name="line_team2" type="number" step="0.5" placeholder="7.5">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Total corners</label>
+          <input name="line_total" type="number" step="0.5" placeholder="11.5">
+        </div>
+        <div>
+          <label>Buts O/U</label>
+          <input name="line_goals" type="number" step="0.5" placeholder="2.5">
+        </div>
+      </div>
+      <label>Handicap</label>
+      <input name="line_handicap" type="number" step="0.5" placeholder="-0.5">
+
+      <h3 style="margin-top:16px;">Cotes 1X2 (optionnel mais recommande)</h3>
+      <div class="row">
+        <div>
+          <label>Eq1</label>
+          <input name="odds_1" type="number" step="0.01" placeholder="1.50">
+        </div>
+        <div>
+          <label>Nul</label>
+          <input name="odds_x" type="number" step="0.01" placeholder="4.50">
+        </div>
+        <div>
+          <label>Eq2</label>
+          <input name="odds_2" type="number" step="0.01" placeholder="6.00">
+        </div>
+      </div>
+
+      <div style="margin-top:12px; display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="save_book" style="width:auto; margin:0;" checked>
+        <label for="save_book" style="margin:0; font-size:12px;">Memoriser ces infos</label>
+      </div>
+    </details>
 
     <div class="card">
       <h2>Options</h2>

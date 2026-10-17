@@ -3,6 +3,7 @@ const VAR_MODEL = 0.08 * 0.08;
 const VAR_MARKET = 0.12 * 0.12;
 const KELLY_SAFE = 0.25;
 const MAX_TOTAL_STAKE = 0.30;
+const BOOK_KEY = 'cornix_book_v1';
 
 let LAST_MARKETS = [];
 
@@ -156,7 +157,7 @@ function correlationHeuristic(m1, m2) {
   if (sameFam && sameDir) return 0.55;
   if (sameFam) return 0.10;
   return 0.05;
-                  }
+                                           }
 
 function matrixInvert(M) {
   const n = M.length;
@@ -329,17 +330,61 @@ function marketBlock(title, m, isBest) {
     '</div>';
 }
 
+function saveBookInfo() {
+  const form = document.querySelector('form');
+  const save = document.getElementById('save_book');
+  if (!save || !save.checked) return;
+
+  const data = {
+    line_team1: form.line_team1.value,
+    line_team2: form.line_team2.value,
+    line_total: form.line_total.value,
+    line_goals: form.line_goals.value,
+    line_handicap: form.line_handicap.value,
+    odds_1: form.odds_1.value,
+    odds_x: form.odds_x.value,
+    odds_2: form.odds_2.value,
+  };
+  try {
+    localStorage.setItem(BOOK_KEY, JSON.stringify(data));
+  } catch (e) {}
+}
+
+function loadBookInfo() {
+  try {
+    const raw = localStorage.getItem(BOOK_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    const form = document.querySelector('form');
+    ['line_team1', 'line_team2', 'line_total', 'line_goals',
+     'line_handicap', 'odds_1', 'odds_x', 'odds_2'].forEach(k => {
+      if (form[k] && data[k]) form[k].value = data[k];
+    });
+  } catch (e) {}
+}
+
 function submitForm(e) {
   e.preventDefault();
   LAST_MARKETS = [];
+  saveBookInfo();
+
   const form = e.target;
   const data = {
     home: form.home.value,
     away: form.away.value,
     league: form.league.value,
     date: form.date.value,
-    n_simulations: parseInt(form.n_simulations.value)
+    n_simulations: parseInt(form.n_simulations.value),
   };
+
+  const o1 = parseFloat(form.odds_1.value);
+  const ox = parseFloat(form.odds_x.value);
+  const o2 = parseFloat(form.odds_2.value);
+  if (o1 > 1 && ox > 1 && o2 > 1) {
+    data.odds_1 = o1;
+    data.odds_x = ox;
+    data.odds_2 = o2;
+  }
 
   const result = document.getElementById("result");
   document.getElementById("portfolio-section").style.display = "none";
@@ -363,6 +408,11 @@ function submitForm(e) {
     html += '<h2>' + d.team1 + ' vs ' + d.team2 + '</h2>';
     html += '<div style="margin-bottom:12px"><span class="badge ' + decClass + '">' + d.decision + '</span></div>';
     html += '<div class="market-detail">' + d.reason + '</div>';
+    if (d.boost1 && d.boost2) {
+      html += '<div style="margin-top:8px; font-size:12px; color:#6e7681;">';
+      html += 'Boost Eq1 : x' + d.boost1.toFixed(3) + ' | Boost Eq2 : x' + d.boost2.toFixed(3);
+      html += '</div>';
+    }
     html += '</div>';
 
     html += '<div class="card"><h2>Meilleur marche global</h2>';
@@ -408,7 +458,7 @@ function submitForm(e) {
   .catch(err => {
     result.innerHTML = '<div class="card" style="color:#f85149">Erreur reseau : ' + err.message + '</div>';
   });
-    }
+}
 
 /* =========================================================
    MULTI-CORNER 360 ULTIMATE
@@ -729,7 +779,7 @@ function computeMultiCorner() {
   html += '</div>';
 
   box.innerHTML = html;
-        }
+  }
 
 /* =========================================================
    CORNIX SHADOW — Track record + Temperature Scaling
@@ -987,6 +1037,7 @@ document.addEventListener('DOMContentLoaded', function() {
   if (dateInput) dateInput.valueAsDate = new Date();
   generateMCForms();
   shadowRenderStats();
+  loadBookInfo();
 });
 
 const _origAnalyze = analyze;

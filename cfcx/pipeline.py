@@ -25,13 +25,15 @@ DEFAULT_SEED = 42
 CALIBRATOR_CORNERS_PATH = "configs/calibrator.json"
 CALIBRATOR_GOALS_PATH = "configs/calibrator_goals.json"
 
-# Avantage domicile
+# Boosts de base (si cotes 1X2 absentes)
 HOME_BOOST = 1.10
 AWAY_FACTOR = 0.91
 
+# Facteur d'amplification du boost favori (si cotes 1X2 présentes)
+FAVORITE_AMPLITUDE = 0.30
+
 LEAGUE_GOALS_AVG = 1.35
 
-# Shrinkage pour chaque calibrateur (50% = prudent)
 SHRINK_CORNERS = 0.5
 SHRINK_GOALS = 0.5
 
@@ -41,9 +43,7 @@ _CALIBRATOR_GOALS_CACHE = None
 
 
 def _load_calibrator(path: str, cache_key: str):
-    """Charge un calibrateur et le met en cache."""
     global _CALIBRATOR_CORNERS_CACHE, _CALIBRATOR_GOALS_CACHE
-
     if cache_key == "corners":
         if _CALIBRATOR_CORNERS_CACHE is not None:
             return _CALIBRATOR_CORNERS_CACHE
@@ -68,7 +68,6 @@ def _load_calibrator(path: str, cache_key: str):
 
 
 def _apply_calibration(prob: float, sport: str = "corners") -> float:
-    """Applique le calibrateur correspondant au sport."""
     if sport == "corners":
         cal = _load_calibrator(CALIBRATOR_CORNERS_PATH, "corners")
         shrink = SHRINK_CORNERS
@@ -86,9 +85,59 @@ def _apply_calibration(prob: float, sport: str = "corners") -> float:
     return prob
 
 
+def _fair_probs_from_1x2(odds_1: float, odds_x: float, odds_2: float):
+    """Dé-marginalise les cotes 1X2 pour obtenir les probas justes."""
+    try:
+        inv_1 = 1.0 / odds_1
+        inv_x = 1.0 / odds_x
+        inv_2 = 1.0 / odds_2
+        total = inv_1 + inv_x + inv_2
+        if total <= 0:
+            return None
+        return (inv_1 / total, inv_x / total, inv_2 / total)
+    except (ZeroDivisionError, TypeError):
+        return None
+
+
+def _compute_favorite_boost(odds_1x2: dict | None) -> tuple[float, float]:
+    """Retourne (boost_eq1, boost_eq2).
+
+    Si cotes 1X2 fournies : boost proportionnel à l'écart des probas justes.
+    Sinon : boost fixe domicile/extérieur.
+    """
+    if odds_1x2 is None:
+        return (HOME_BOOST, AWAY_FACTOR)
+
+    try:
+        o1 = float(odds_1x2["odds_1"])
+        ox = float(odds_1x2["odds_x"])
+        o2 = float(odds_1x2["odds_2"])
+    except (KeyError, ValueError, TypeError):
+        return (HOME_BOOST, AWAY_FACTOR)
+
+    probs = _fair_probs_from_1x2(o1, ox, o2)
+    if probs is None:
+        return (HOME_BOOST, AWAY_FACTOR)
+
+    p1, px, p2 = probs
+    diff = p1 - p2
+
+    boost1 = 1.0 + FAVORITE_AMPLITUDE * diff
+    boost2 = 1.0 - FAVORITE_AMPLITUDE * diff
+
+    # Garde-fous : éviter extrêmes
+    boost1 = max(0.70, min(1.40, boost1))
+    boost2 = max(0.70, min(1.40, boost2))
+
+    # Petit boost domicile résiduel (+3% Eq1, -3% Eq2)
+    boost1 *= 1.03
+    boost2 *= 0.97
+
+    return (boost1, boost2)
+
+
 def _adjust_goals_intensity(atk_for: float, def_against: float,
                             league_avg: float) -> float:
-    """Calcule l'intensité de buts pour une équipe."""
     if league_avg <= 0:
         return 1.35
     return max(0.3, (atk_for + def_against) / 2.0 * (league_avg / 1.35))
@@ -97,8 +146,14 @@ def _adjust_goals_intensity(atk_for: float, def_against: float,
 def run(s, team1: str, team2: str, league: str,
         match_date: date,
         n_simulations: int = 10000,
-        seed: int | None = DEFAULT_SEED) -> dict:
-    """Pipeline complet : corners + buts."""
+        seed: int | None = DEFAULT_SEED,
+        odds_1x2: dict | None = None) -> dict:
+    """Pipeline complet : corners + buts.
+
+    team1 = équipe à domicile
+    team2 = équipe à l'extérieur
+    odds_1x2 : {"odds_1": float, "odds_x": float, "odds_2": float} ou None
+    """
 
     # ========================================================
     # 1. ANALYSE CORNERS
@@ -117,8 +172,13 @@ def run(s, team1: str, team2: str, league: str,
     lat2 = latent_force(dna2, prior)
 
     m = matchup(lat1, lat2, lg_avg)
-    lam1 = m["expected_c1"] * HOME_BOOST
-    lam2 = m["expected_c2"] * AWAY_FACTOR
+    lam1_base = m["expected_c1"]
+    lam2_base = m["expected_c2"]
+
+    # Boost favori (auto si cotes 1X2, sinon fixe)
+    boost1, boost2 = _compute_favorite_boost(odds_1x2)
+    lam1 = lam1_base * boost1
+    lam2 = lam2_base * boost2
 
     jd = joint_distribution(
         lam1=lam1, lam2=lam2,
@@ -146,8 +206,11 @@ def run(s, team1: str, team2: str, league: str,
     atk2 = gdna2["attack_goals"] or LEAGUE_GOALS_AVG
     def2 = gdna2["defense_goals"] or LEAGUE_GOALS_AVG
 
-    lam_h_goals = _adjust_goals_intensity(atk1, def2, LEAGUE_GOALS_AVG) * HOME_BOOST
-    lam_a_goals = _adjust_goals_intensity(atk2, def1, LEAGUE_GOALS_AVG) * AWAY_FACTOR
+    lam_h_goals_base = _adjust_goals_intensity(atk1, def2, LEAGUE_GOALS_AVG)
+    lam_a_goals_base = _adjust_goals_intensity(atk2, def1, LEAGUE_GOALS_AVG)
+
+    lam_h_goals = lam_h_goals_base * boost1
+    lam_a_goals = lam_a_goals_base * boost2
 
     jg = joint_distribution_goals(
         lam_h=lam_h_goals, lam_a=lam_a_goals,
@@ -220,6 +283,8 @@ def run(s, team1: str, team2: str, league: str,
     result["goals_outcomes"] = jg["outcomes"]
     result["seed"] = seed
     result["all_markets"] = all_markets
+    result["boost1"] = boost1
+    result["boost2"] = boost2
 
     return result
 
@@ -227,11 +292,12 @@ def run(s, team1: str, team2: str, league: str,
 def run_simple(team1: str, team2: str, league: str,
                match_date: date,
                n_simulations: int = 10000,
-               seed: int | None = DEFAULT_SEED) -> dict:
-    """Version qui ouvre sa propre session."""
+               seed: int | None = DEFAULT_SEED,
+               odds_1x2: dict | None = None) -> dict:
     s = make_session()
     try:
         return run(s, team1, team2, league, match_date,
-                   n_simulations=n_simulations, seed=seed)
+                   n_simulations=n_simulations, seed=seed,
+                   odds_1x2=odds_1x2)
     finally:
         s.close()

@@ -1,6 +1,5 @@
 from datetime import date
 from pathlib import Path
-import math
 
 from cfcx.data.store import session as make_session
 from cfcx.features.corner_dna import corner_dna
@@ -129,16 +128,6 @@ def _compute_favorite_boost(odds_1x2: dict | None) -> tuple[float, float]:
 
 
 def _compute_h2h_adjustment(h2h: dict | None):
-    """Calcule les lambda équivalents H2H et retourne un dict.
-
-    h2h = {
-      "matches": [
-        {"c1mt_1": int, "c1mt_2": int, "c2mt_1": int, "c2mt_2": int,
-         "b1mt_1": int, "b1mt_2": int, "b2mt_1": int, "b2mt_2": int},
-        ...
-      ]
-    }
-    """
     if not h2h or not h2h.get("matches"):
         return None
 
@@ -153,10 +142,6 @@ def _compute_h2h_adjustment(h2h: dict | None):
     goals2_list = []
     corners1_total = []
     corners2_total = []
-    goals1_mt1 = []
-    goals1_mt2 = []
-    goals2_mt1 = []
-    goals2_mt2 = []
 
     for m in matches:
         try:
@@ -177,10 +162,6 @@ def _compute_h2h_adjustment(h2h: dict | None):
         corners2_total.append(c2_mt1 + c2_mt2)
         goals1_list.append(b1_mt1 + b1_mt2)
         goals2_list.append(b2_mt1 + b2_mt2)
-        goals1_mt1.append(b1_mt1)
-        goals1_mt2.append(b1_mt2)
-        goals2_mt1.append(b2_mt1)
-        goals2_mt2.append(b2_mt2)
 
     if not mc1_list:
         return None
@@ -210,7 +191,6 @@ def _compute_h2h_adjustment(h2h: dict | None):
 
 
 def _blend_lambdas(lam_model: float, lam_h2h: float | None) -> float:
-    """Mélange 70% modèle / 30% H2H."""
     if lam_h2h is None or lam_h2h <= 0:
         return lam_model
     return (1.0 - H2H_WEIGHT) * lam_model + H2H_WEIGHT * lam_h2h

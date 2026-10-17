@@ -12,10 +12,9 @@ from cfcx.pipeline import run as run_pipeline
 from cfcx.serving.templates import FORM_HTML
 
 
-app = FastAPI(title="CFC-X API", version="0.2.0")
+app = FastAPI(title="CFC-X API", version="0.3.0")
 START_TIME = datetime.now(UTC)
 
-# Monter le dossier static (CSS + JS)
 _STATIC_DIR = Path(__file__).parent / "static"
 if _STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
@@ -28,6 +27,9 @@ class PredictRequest(BaseModel):
     date: str | None = None
     n_simulations: int = 5000
     seed: int | None = 42
+    odds_1: float | None = None
+    odds_x: float | None = None
+    odds_2: float | None = None
 
 
 def _parse_date(s: str | None) -> date:
@@ -104,6 +106,16 @@ def predict(req: PredictRequest):
             detail="Format de date invalide (attendu YYYY-MM-DD)",
         )
 
+    # Construire le dict odds_1x2 si les 3 cotes sont fournies
+    odds_1x2 = None
+    if req.odds_1 and req.odds_x and req.odds_2:
+        if req.odds_1 > 1 and req.odds_x > 1 and req.odds_2 > 1:
+            odds_1x2 = {
+                "odds_1": req.odds_1,
+                "odds_x": req.odds_x,
+                "odds_2": req.odds_2,
+            }
+
     s = make_session()
     try:
         result = run_pipeline(
@@ -114,6 +126,7 @@ def predict(req: PredictRequest):
             match_date=match_date,
             n_simulations=req.n_simulations,
             seed=req.seed,
+            odds_1x2=odds_1x2,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -139,4 +152,6 @@ def predict(req: PredictRequest):
         "goals_outcomes": result.get("goals_outcomes", {}),
         "seed": result.get("seed"),
         "dominance": result.get("dominance", {}),
-                                                   }
+        "boost1": result.get("boost1", 1.0),
+        "boost2": result.get("boost2", 1.0),
+    }

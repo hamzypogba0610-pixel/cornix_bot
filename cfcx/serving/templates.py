@@ -91,6 +91,55 @@ FORM_HTML = """
       </div>
     </details>
 
+    <details class="mc-section" id="h2h-section">
+      <summary>H2H — 5 dernieres confrontations (recommande)</summary>
+      <p class="mc-hint" style="margin-top:0; margin-bottom:14px;">
+        Saisis les corners ET les buts par mi-temps des 5 dernieres
+        confrontations directes entre les 2 equipes.
+        Le bot ajuste les intensites (30% H2H / 70% modele).
+      </p>
+
+      <div class="mc-tabs">
+        <div class="mc-tab active" data-tab="grid" onclick="switchH2HTab('grid')">Grille</div>
+        <div class="mc-tab" data-tab="csv" onclick="switchH2HTab('csv')">CSV</div>
+      </div>
+
+      <div id="h2h-grid-view">
+        <div class="h2h-header-row">
+          <div></div>
+          <div class="h2h-group-title">Corners 1re MT</div>
+          <div class="h2h-group-title">Corners 2e MT</div>
+          <div class="h2h-group-title">Buts 1re MT</div>
+          <div class="h2h-group-title">Buts 2e MT</div>
+        </div>
+        <div class="h2h-subheader-row">
+          <div></div>
+          <div class="h2h-sub">Eq1</div>
+          <div class="h2h-sub">Eq2</div>
+          <div class="h2h-sub">Eq1</div>
+          <div class="h2h-sub">Eq2</div>
+          <div class="h2h-sub">Eq1</div>
+          <div class="h2h-sub">Eq2</div>
+          <div class="h2h-sub">Eq1</div>
+          <div class="h2h-sub">Eq2</div>
+        </div>
+        <div id="h2h-grid-body"></div>
+      </div>
+
+      <div id="h2h-csv-view" style="display:none;">
+        <textarea id="h2h-csv" class="mc-csv-area" style="min-height:120px;"
+          placeholder="Format par ligne : C1MT-Eq1, C1MT-Eq2, C2MT-Eq1, C2MT-Eq2, B1MT-Eq1, B1MT-Eq2, B2MT-Eq1, B2MT-Eq2
+Exemple :
+3,2,4,3,1,0,1,1"></textarea>
+        <div class="mc-hint">1 ligne = 1 match. 8 valeurs separees par virgules.</div>
+      </div>
+
+      <div style="margin-top:12px; display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="save_h2h" style="width:auto; margin:0;" checked>
+        <label for="save_h2h" style="margin:0; font-size:12px;">Memoriser ces H2H</label>
+      </div>
+    </details>
+
     <div class="card">
       <h2>Options</h2>
       <label>Simulations Monte Carlo</label>
@@ -139,7 +188,7 @@ FORM_HTML = """
   <div class="footnote">
     Kelly-Bayesian Portfolio Engine — fusion bayesienne + de-marginalisation + Kelly multi-actifs<br>
     Calibrateurs : corners (9154 paires) et buts (3327 paires) — Isotonic.<br>
-    Shadow + Online Temperature Scaling : calibration en continu.
+    Shadow + Online Temperature Scaling + H2H : calibration continue.
   </div>
 </div>
 <script src="/static/app.js"></script>

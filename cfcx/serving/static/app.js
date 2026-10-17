@@ -50,6 +50,10 @@ function gradeValue(ev, kelly, p_post, p_market) {
   return "D";
 }
 
+function getField(name) {
+  return document.querySelector('input[name="' + name + '"]');
+}
+
 function analyze(el, p_model, marketId, sport, family, line) {
   const market = el.closest('.market');
   const verdict = el.parentElement.querySelector('.verdict');
@@ -157,7 +161,7 @@ function correlationHeuristic(m1, m2) {
   if (sameFam && sameDir) return 0.55;
   if (sameFam) return 0.10;
   return 0.05;
-                                           }
+}
 
 function matrixInvert(M) {
   const n = M.length;
@@ -331,23 +335,14 @@ function marketBlock(title, m, isBest) {
 }
 
 function saveBookInfo() {
-  const form = document.querySelector('form');
   const save = document.getElementById('save_book');
   if (!save || !save.checked) return;
-
-  const data = {
-    line_team1: form.line_team1.value,
-    line_team2: form.line_team2.value,
-    line_total: form.line_total.value,
-    line_goals: form.line_goals.value,
-    line_handicap: form.line_handicap.value,
-    odds_1: form.odds_1.value,
-    odds_x: form.odds_x.value,
-    odds_2: form.odds_2.value,
-  };
-  try {
-    localStorage.setItem(BOOK_KEY, JSON.stringify(data));
-  } catch (e) {}
+  const data = {};
+  ['line_team1','line_team2','line_total','line_goals','line_handicap','odds_1','odds_x','odds_2'].forEach(k => {
+    const f = getField(k);
+    if (f) data[k] = f.value;
+  });
+  try { localStorage.setItem(BOOK_KEY, JSON.stringify(data)); } catch (e) {}
 }
 
 function loadBookInfo() {
@@ -355,10 +350,9 @@ function loadBookInfo() {
     const raw = localStorage.getItem(BOOK_KEY);
     if (!raw) return;
     const data = JSON.parse(raw);
-    const form = document.querySelector('form');
-    ['line_team1', 'line_team2', 'line_total', 'line_goals',
-     'line_handicap', 'odds_1', 'odds_x', 'odds_2'].forEach(k => {
-      if (form[k] && data[k]) form[k].value = data[k];
+    Object.keys(data).forEach(k => {
+      const f = getField(k);
+      if (f && data[k]) f.value = data[k];
     });
   } catch (e) {}
 }
@@ -368,18 +362,26 @@ function submitForm(e) {
   LAST_MARKETS = [];
   saveBookInfo();
 
-  const form = e.target;
+  const homeF = getField('home');
+  const awayF = getField('away');
+  const leagueF = getField('league');
+  const dateF = getField('date');
+  const simsF = getField('n_simulations');
+  const o1F = getField('odds_1');
+  const oxF = getField('odds_x');
+  const o2F = getField('odds_2');
+
   const data = {
-    home: form.home.value,
-    away: form.away.value,
-    league: form.league.value,
-    date: form.date.value,
-    n_simulations: parseInt(form.n_simulations.value),
+    home: homeF ? homeF.value : '',
+    away: awayF ? awayF.value : '',
+    league: leagueF ? leagueF.value : 'E0',
+    date: dateF ? dateF.value : null,
+    n_simulations: simsF ? parseInt(simsF.value) : 5000,
   };
 
-  const o1 = parseFloat(form.odds_1.value);
-  const ox = parseFloat(form.odds_x.value);
-  const o2 = parseFloat(form.odds_2.value);
+  const o1 = o1F ? parseFloat(o1F.value) : NaN;
+  const ox = oxF ? parseFloat(oxF.value) : NaN;
+  const o2 = o2F ? parseFloat(o2F.value) : NaN;
   if (o1 > 1 && ox > 1 && o2 > 1) {
     data.odds_1 = o1;
     data.odds_x = ox;
@@ -400,7 +402,7 @@ function submitForm(e) {
   .then(r => r.json())
   .then(d => {
     if (d.detail) {
-      result.innerHTML = '<div class="card" style="color:#f85149">Erreur : ' + d.detail + '</div>';
+      result.innerHTML = '<div class="card" style="color:#f85149">Erreur : ' + JSON.stringify(d.detail) + '</div>';
       return;
     }
     const decClass = d.decision === "BET" ? "bet" : "nobet";
@@ -458,597 +460,4 @@ function submitForm(e) {
   .catch(err => {
     result.innerHTML = '<div class="card" style="color:#f85149">Erreur reseau : ' + err.message + '</div>';
   });
-}
-
-/* =========================================================
-   MULTI-CORNER 360 ULTIMATE
-   ========================================================= */
-const MC_BLOCKS = [
-  { id: 'mc1d', label: 'Eq1 - 10 matchs a DOMICILE', team: 1, n: 10 },
-  { id: 'mc1g', label: 'Eq1 - 5 matchs GLOBAUX', team: 1, n: 5 },
-  { id: 'mc2e', label: 'Eq2 - 10 matchs a l EXTERIEUR', team: 2, n: 10 },
-  { id: 'mc2g', label: 'Eq2 - 5 matchs GLOBAUX', team: 2, n: 5 }
-];
-
-function generateMCForms() {
-  const container = document.getElementById('mc-forms');
-  if (!container) return;
-  let html = '';
-  MC_BLOCKS.forEach(block => {
-    html += '<div class="mc-block" data-block="' + block.id + '">';
-    html += '<div class="mc-block-title">' + block.label + ' <span class="badge-info">(' + block.n + ' matchs)</span></div>';
-    html += '<div class="mc-tabs">';
-    html += '<div class="mc-tab active" data-tab="grid" onclick="switchMCTab(\'' + block.id + '\', \'grid\')">Grille</div>';
-    html += '<div class="mc-tab" data-tab="csv" onclick="switchMCTab(\'' + block.id + '\', \'csv\')">CSV</div>';
-    html += '</div>';
-    html += '<div class="mc-grid-view" data-view="grid">';
-    html += '<div class="mc-grid-header"><span>#</span><span>1re MT</span><span>2e MT</span></div>';
-    for (let i = 0; i < block.n; i++) {
-      html += '<div class="mc-grid-row">';
-      html += '<span class="mc-idx">' + (i + 1) + '</span>';
-      html += '<input type="number" min="0" max="20" step="1" data-block="' + block.id + '" data-idx="' + i + '" data-half="1" placeholder="0">';
-      html += '<input type="number" min="0" max="20" step="1" data-block="' + block.id + '" data-idx="' + i + '" data-half="2" placeholder="0">';
-      html += '</div>';
-    }
-    html += '</div>';
-    html += '<div class="mc-csv-view" data-view="csv" style="display:none;">';
-    html += '<textarea class="mc-csv-area" data-block="' + block.id + '" placeholder="Format : 1re MT, 2e MT (une ligne par match)"></textarea>';
-    html += '<div class="mc-hint">Une ligne = un match. Format : A1, A2</div>';
-    html += '</div>';
-    html += '</div>';
-  });
-  container.innerHTML = html;
-}
-
-function switchMCTab(blockId, tab) {
-  const block = document.querySelector('[data-block="' + blockId + '"]');
-  if (!block) return;
-  block.querySelectorAll('.mc-tab').forEach(t => {
-    t.classList.toggle('active', t.dataset.tab === tab);
-  });
-  block.querySelectorAll('[data-view]').forEach(v => {
-    v.style.display = (v.dataset.view === tab) ? '' : 'none';
-  });
-}
-
-function parseMCCSV(blockId) {
-  const ta = document.querySelector('textarea[data-block="' + blockId + '"]');
-  if (!ta || !ta.value.trim()) return [];
-  const pairs = [];
-  ta.value.trim().split('\n').forEach(line => {
-    const parts = line.split(/[,\t;]+/).map(s => parseFloat(s.trim()));
-    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[0] >= 0 && parts[1] >= 0) {
-      pairs.push([Math.round(parts[0]), Math.round(parts[1])]);
-    }
-  });
-  return pairs;
-}
-
-function getMCData() {
-  const data = {};
-  MC_BLOCKS.forEach(block => {
-    const gridView = document.querySelector('[data-block="' + block.id + '"] [data-view="grid"]');
-    const gridVisible = gridView && gridView.style.display !== 'none';
-
-    let pairs = [];
-    if (gridVisible) {
-      const inputs1 = document.querySelectorAll('input[data-block="' + block.id + '"][data-half="1"]');
-      const inputs2 = document.querySelectorAll('input[data-block="' + block.id + '"][data-half="2"]');
-      for (let i = 0; i < inputs1.length; i++) {
-        const v1 = parseFloat(inputs1[i].value);
-        const v2 = parseFloat(inputs2[i].value);
-        if (!isNaN(v1) && !isNaN(v2) && v1 >= 0 && v2 >= 0) {
-          pairs.push([Math.round(v1), Math.round(v2)]);
-        }
-      }
-    } else {
-      pairs = parseMCCSV(block.id);
-    }
-
-    data[block.id] = { block: block, pairs: pairs };
-  });
-  return data;
-}
-
-function computeStats(pairs) {
-  if (!pairs || pairs.length === 0) return null;
-  const A1 = pairs.map(p => p[0]);
-  const A2 = pairs.map(p => p[1]);
-  const n = pairs.length;
-  const mean1 = A1.reduce((a, b) => a + b, 0) / n;
-  const mean2 = A2.reduce((a, b) => a + b, 0) / n;
-  const var1 = A1.reduce((s, v) => s + Math.pow(v - mean1, 2), 0) / Math.max(1, n - 1);
-  const var2 = A2.reduce((s, v) => s + Math.pow(v - mean2, 2), 0) / Math.max(1, n - 1);
-  const std1 = Math.sqrt(var1);
-  const std2 = Math.sqrt(var2);
-  let cov = 0;
-  for (let i = 0; i < n; i++) cov += (A1[i] - mean1) * (A2[i] - mean2);
-  cov = cov / Math.max(1, n - 1);
-  const rho = (std1 > 1e-9 && std2 > 1e-9) ? cov / (std1 * std2) : 0;
-
-  const products = pairs.map(p => p[0] * p[1]);
-  const zeroCount = products.filter(x => x === 0).length;
-
-  const sorted = [].concat(products).sort((a, b) => a - b);
-  const p10 = sorted[Math.floor(0.10 * n)];
-  const p50 = sorted[Math.floor(0.50 * n)];
-  const p90 = sorted[Math.min(n - 1, Math.floor(0.90 * n))];
-
-  return {
-    n: n, mean1: mean1, mean2: mean2, std1: std1, std2: std2,
-    rho: rho, zeroCount: zeroCount,
-    meanProduct: products.reduce((a, b) => a + b, 0) / n,
-    p10: p10, p50: p50, p90: p90
-  };
-}
-
-function simulateBivariate(mean1, mean2, std1, std2, rho, nSims, seed) {
-  const samples = [];
-  const s1 = Math.max(std1, 0.5);
-  const s2 = Math.max(std2, 0.5);
-  let s = seed || 12345;
-  const rand = () => {
-    s = (s * 1103515245 + 12345) & 0x7fffffff;
-    return s / 0x7fffffff;
-  };
-  const randn = () => {
-    const u1 = Math.max(1e-9, rand());
-    const u2 = rand();
-    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-  };
-  const rho_c = Math.max(-0.95, Math.min(0.95, rho));
-  const a = Math.sqrt(1 - rho_c * rho_c);
-  for (let i = 0; i < nSims; i++) {
-    const z1 = randn();
-    const z2 = rho_c * z1 + a * randn();
-    let a1 = Math.round(mean1 + s1 * z1);
-    let a2 = Math.round(mean2 + s2 * z2);
-    if (a1 < 0) a1 = 0;
-    if (a2 < 0) a2 = 0;
-    samples.push(a1 * a2);
-  }
-  return samples;
-}
-
-function mcProbabilities(samples) {
-  const sorted = [].concat(samples).sort((a, b) => a - b);
-  const n = sorted.length;
-  const mean = samples.reduce((a, b) => a + b, 0) / n;
-  const p10 = sorted[Math.floor(0.10 * n)];
-  const p50 = sorted[Math.floor(0.50 * n)];
-  const p90 = sorted[Math.min(n - 1, Math.floor(0.90 * n))];
-
-  const lines = [5.5, 10.5, 15.5, 20.5, 25.5, 30.5, 35.5, 40.5];
-  const probs = {};
-  lines.forEach(L => {
-    const threshold = Math.floor(L + 0.5);
-    const over = samples.filter(x => x >= threshold).length / n;
-    probs[L] = { over: over, under: 1 - over };
-  });
-
-  return { mean: mean, p10: p10, p50: p50, p90: p90, probs: probs };
-}
-
-function renderMCBlock(title, samples, teamSide) {
-  const stats = mcProbabilities(samples);
-  let html = '<div class="mc-result-item" data-mc="' + teamSide + '">';
-  html += '<div class="mc-result-title">' + title + '</div>';
-  html += '<div class="mc-result-detail">';
-  html += 'Moyenne : <span>' + stats.mean.toFixed(2) + '</span> | ';
-  html += 'Mediane : <span>' + stats.p50 + '</span><br>';
-  html += 'P10 : <span>' + stats.p10 + '</span> | P90 : <span>' + stats.p90 + '</span>';
-  html += '</div>';
-
-  html += '<div class="mc-dist-bar"><div class="mc-dist-fill" style="width:100%"></div></div>';
-  html += '<div class="mc-dist-labels"><span>' + stats.p10 + '</span><span>' + stats.p50 + '</span><span>' + stats.p90 + '</span></div>';
-
-  html += '<div style="margin-top:10px; font-size:12px; color:#8b949e;">';
-  html += '<b>Probabilites Over :</b><br>';
-  [5.5, 10.5, 15.5, 20.5, 25.5, 30.5, 35.5].forEach(L => {
-    const p = stats.probs[L];
-    if (p) {
-      html += 'Over ' + L + ' : <span style="color:#58a6ff">' + (p.over * 100).toFixed(1) + '%</span> | ';
-      html += 'Under ' + L + ' : <span style="color:#8b949e">' + (p.under * 100).toFixed(1) + '%</span><br>';
-    }
-  });
-  html += '</div>';
-
-  const mid = 'MC_' + teamSide;
-  const pOver = stats.probs[20.5] ? stats.probs[20.5].over : 0.5;
-  const pUnder = 1 - pOver;
-  const best = pOver >= pUnder
-    ? { dir: 'over', p: pOver, line: 20.5 }
-    : { dir: 'under', p: pUnder, line: 20.5 };
-
-  html += '<div class="odds-row" style="margin-top:10px; border-top:1px solid #30363d; padding-top:10px;">';
-  html += '<label>Cote ' + best.dir.toUpperCase() + ' ' + best.line + ' :</label>';
-  html += '<input type="number" step="0.01" min="1.01" placeholder="1.50" ';
-  html += 'oninput="analyzeMC(this, \'' + mid + '\', ' + best.p + ');">';
-  html += '<span class="verdict none">—</span>';
-  html += '</div>';
-  html += '<div class="analysis"></div>';
-
-  html += '</div>';
-  return html;
-}
-
-function analyzeMC(el, marketId, prob) {
-  const parent = el.closest('.mc-result-item');
-  const verdict = el.parentElement.querySelector('.verdict');
-  const analysis = parent.querySelector('.analysis');
-  const odds = parseFloat(el.value);
-
-  const entry = LAST_MARKETS.find(x => x.market_id === marketId);
-  if (!entry) {
-    LAST_MARKETS.push({
-      market_id: marketId,
-      family: 'multicorner',
-      sport: 'corners',
-      direction: 'over',
-      line: 20.5,
-      prob: prob,
-      odds: null
-    });
-  } else {
-    entry.prob = prob;
-    entry.odds = (!odds || odds <= 1) ? null : odds;
-  }
-
-  if (!odds || odds <= 1) {
-    verdict.textContent = "—";
-    verdict.className = "verdict none";
-    if (analysis) analysis.classList.remove("show");
-    return;
-  }
-
-  const p_imp = impliedFromOdds(odds);
-  const p_market = fairFromImplied(p_imp);
-  const p_post = bayesianFusion(prob, p_market);
-  const ev = computeEV(p_post, odds);
-  const kelly_raw = kellyFraction(p_post, odds);
-  const kelly = Math.max(0, kelly_raw * KELLY_SAFE);
-  const grade = gradeValue(ev, kelly, p_post, p_market);
-
-  if (ev > 0) {
-    verdict.textContent = "BET (+" + (ev * 100).toFixed(1) + "%)";
-    verdict.className = "verdict ok";
-  } else {
-    verdict.textContent = "NO BET (" + (ev * 100).toFixed(1) + "%)";
-    verdict.className = "verdict ko";
-  }
-
-  if (!analysis) return;
-  analysis.innerHTML = '<div class="analysis-grid">' +
-    '<div class="k">Prob implicite :</div><div class="v">' + fmtPct(p_imp) + '</div>' +
-    '<div class="k">Prob juste :</div><div class="v">' + fmtPct(p_market) + '</div>' +
-    '<div class="k">Prob modele :</div><div class="v">' + fmtPct(prob) + '</div>' +
-    '<div class="k">Prob posterieure :</div><div class="v">' + fmtPct(p_post) + '</div>' +
-    '<div class="k">Edge bayesien :</div><div class="v">' + fmtPct(p_post - p_market) + '</div>' +
-    '<div class="k">EV :</div><div class="v">' + (ev * 100).toFixed(2) + '%</div>' +
-    '<div class="k">Kelly :</div><div class="v">' + (kelly * 100).toFixed(1) + '%</div>' +
-    '</div>' +
-    '<div class="grade-badge grade-' + grade + '">Grade ' + grade + '</div>';
-  analysis.classList.add("show");
-}
-
-function computeMultiCorner() {
-  const box = document.getElementById('mc-result');
-  const data = getMCData();
-
-  const hasE1 = data['mc1d'].pairs.length >= 3 || data['mc1g'].pairs.length >= 3;
-  const hasE2 = data['mc2e'].pairs.length >= 3 || data['mc2g'].pairs.length >= 3;
-
-  if (!hasE1 || !hasE2) {
-    box.innerHTML = '<div class="card" style="color:#f85149">Remplis au moins 3 matchs pour chaque equipe.</div>';
-    return;
-  }
-
-  const s1d = computeStats(data['mc1d'].pairs);
-  const s1g = computeStats(data['mc1g'].pairs);
-  const s2e = computeStats(data['mc2e'].pairs);
-  const s2g = computeStats(data['mc2g'].pairs);
-
-  const stats1 = s1d || s1g;
-  const stats2 = s2e || s2g;
-  const n1 = data['mc1d'].pairs.length || data['mc1g'].pairs.length;
-  const n2 = data['mc2e'].pairs.length || data['mc2g'].pairs.length;
-
-  let coherenceWarn = '';
-  if (s1d && s1g && Math.abs(s1d.meanProduct - s1g.meanProduct) / Math.max(1, s1g.meanProduct) > 0.30) {
-    coherenceWarn += '<div class="corr-warning">Eq1 : ecart > 30% entre domicile (' + s1d.meanProduct.toFixed(1) + ') et global (' + s1g.meanProduct.toFixed(1) + ')</div>';
-  }
-  if (s2e && s2g && Math.abs(s2e.meanProduct - s2g.meanProduct) / Math.max(1, s2g.meanProduct) > 0.30) {
-    coherenceWarn += '<div class="corr-warning">Eq2 : ecart > 30% entre exterieur (' + s2e.meanProduct.toFixed(1) + ') et global (' + s2g.meanProduct.toFixed(1) + ')</div>';
-  }
-
-  const N_SIMS = 10000;
-  const mc1 = simulateBivariate(stats1.mean1, stats1.mean2, stats1.std1, stats1.std2, stats1.rho, N_SIMS, 42);
-  const mc2 = simulateBivariate(stats2.mean1, stats2.mean2, stats2.std1, stats2.std2, stats2.rho, N_SIMS, 43);
-  const mcGlobal = mc1.map((v, i) => v + mc2[i]);
-
-  let html = '<div class="card">';
-  html += '<h2>Resultats Multi-Corner</h2>';
-  html += '<div class="mc-result-detail" style="margin-bottom:12px;">';
-  html += 'Eq1 : ' + n1 + ' matchs (rho=' + stats1.rho.toFixed(2) + ', P(0)=' + (stats1.zeroCount / stats1.n * 100).toFixed(0) + '%)<br>';
-  html += 'Eq2 : ' + n2 + ' matchs (rho=' + stats2.rho.toFixed(2) + ', P(0)=' + (stats2.zeroCount / stats2.n * 100).toFixed(0) + '%)';
-  html += '</div>';
-  if (coherenceWarn) html += coherenceWarn;
-  html += renderMCBlock('MC Equipe 1 = A1 x A2', mc1, 'T1');
-  html += renderMCBlock('MC Equipe 2 = B1 x B2', mc2, 'T2');
-  html += renderMCBlock('MC Global = MC1 + MC2', mcGlobal, 'GLOBAL');
-  html += '</div>';
-
-  box.innerHTML = html;
-  }
-
-/* =========================================================
-   CORNIX SHADOW — Track record + Temperature Scaling
-   ========================================================= */
-const SHADOW_KEY = 'cornix_shadow_v1';
-
-function shadowLoad() {
-  try {
-    const raw = localStorage.getItem(SHADOW_KEY);
-    return raw ? JSON.parse(raw) : { bets: [] };
-  } catch (e) {
-    return { bets: [] };
-  }
-}
-
-function shadowSave(data) {
-  try {
-    localStorage.setItem(SHADOW_KEY, JSON.stringify(data));
-  } catch (e) {}
-}
-
-function shadowSaveCurrent() {
-  if (!LAST_MARKETS || LAST_MARKETS.length === 0) {
-    alert('Analyse un match d\'abord.');
-    return;
-  }
-  const form = document.querySelector('form');
-  const home = form.home.value || '?';
-  const away = form.away.value || '?';
-  const data = shadowLoad();
-
-  let count = 0;
-  LAST_MARKETS.forEach(m => {
-    if (m.odds && m.odds > 1) {
-      data.bets.push({
-        id: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-        match: home + ' vs ' + away,
-        market: m.market_id,
-        prob: m.prob,
-        odds: m.odds,
-        date: new Date().toISOString(),
-        result: null
-      });
-      count++;
-    }
-  });
-
-  shadowSave(data);
-  shadowRenderStats();
-  alert(count + ' pari(s) enregistre(s) dans Shadow.');
-}
-
-function shadowMarkResult(betId, result) {
-  const data = shadowLoad();
-  const bet = data.bets.find(b => b.id === betId);
-  if (!bet) return;
-  bet.result = result;
-  shadowSave(data);
-  shadowRenderStats();
-}
-
-function shadowComputeMetrics() {
-  const data = shadowLoad();
-  const resolved = data.bets.filter(b => b.result === 'win' || b.result === 'loss');
-  if (resolved.length === 0) {
-    return { n: 0, wins: 0, losses: 0, winRate: 0, roi: 0, ece: 0, profit: 0, bins: null };
-  }
-
-  let wins = 0, losses = 0, profit = 0, totalStake = 0;
-  const bins = [];
-  for (let i = 0; i < 10; i++) bins.push({ p: 0, o: 0, n: 0 });
-
-  resolved.forEach(b => {
-    totalStake += 1;
-    const isWin = b.result === 'win';
-    if (isWin) {
-      wins++;
-      profit += (b.odds - 1);
-    } else {
-      losses++;
-      profit -= 1;
-    }
-    const binIdx = Math.min(9, Math.floor(b.prob * 10));
-    bins[binIdx].p += b.prob;
-    bins[binIdx].o += isWin ? 1 : 0;
-    bins[binIdx].n += 1;
-  });
-
-  let ece = 0;
-  bins.forEach(bin => {
-    if (bin.n > 0) {
-      const avgP = bin.p / bin.n;
-      const avgO = bin.o / bin.n;
-      ece += (bin.n / resolved.length) * Math.abs(avgP - avgO);
-    }
-  });
-
-  return {
-    n: resolved.length,
-    wins: wins,
-    losses: losses,
-    winRate: wins / resolved.length,
-    roi: profit / totalStake,
-    profit: profit,
-    ece: ece,
-    bins: bins
-  };
-}
-
-function shadowRenderStats() {
-  const box = document.getElementById('shadow-stats');
-  if (!box) return;
-  const data = shadowLoad();
-  const m = shadowComputeMetrics();
-
-  let html = '';
-
-  if (data.bets.length === 0) {
-    html = '<div class="shadow-empty">Aucun pari enregistre.<br>Analyse un match, saisis une cote, puis clique "Enregistrer analyse".</div>';
-    box.innerHTML = html;
-    return;
-  }
-
-  if (m.n > 0) {
-    const roiClass = m.roi > 0 ? 'good' : (m.roi < 0 ? 'bad' : 'neutral');
-    const wrClass = m.winRate > 0.55 ? 'good' : (m.winRate < 0.45 ? 'bad' : 'neutral');
-    const eceClass = m.ece < 0.05 ? 'good' : (m.ece > 0.10 ? 'bad' : 'neutral');
-
-    html += '<div class="shadow-stats-grid">';
-    html += '<div class="k">Paris resolus :</div><div class="v">' + m.n + '</div>';
-    html += '<div class="k">Gagnes :</div><div class="v good">' + m.wins + '</div>';
-    html += '<div class="k">Perdus :</div><div class="v bad">' + m.losses + '</div>';
-    html += '<div class="k">Win rate :</div><div class="v ' + wrClass + '">' + (m.winRate * 100).toFixed(1) + '%</div>';
-    html += '<div class="k">ROI reel :</div><div class="v ' + roiClass + '">' + (m.roi >= 0 ? '+' : '') + (m.roi * 100).toFixed(2) + '%</div>';
-    html += '<div class="k">Profit (unites) :</div><div class="v ' + roiClass + '">' + (m.profit >= 0 ? '+' : '') + m.profit.toFixed(2) + '</div>';
-    html += '<div class="k">ECE reel :</div><div class="v ' + eceClass + '">' + m.ece.toFixed(4) + '</div>';
-    html += '<div class="k">Total analyses :</div><div class="v">' + data.bets.length + '</div>';
-    html += '</div>';
-
-    html += shadowRenderReliability(m.bins);
-  }
-
-  html += '<div style="margin-top:12px; font-size:12px; color:#8b949e; text-transform:uppercase; letter-spacing:0.5px;">Derniers paris</div>';
-  const recent = [].concat(data.bets).reverse().slice(0, 15);
-  recent.forEach(b => {
-    const cls = b.result === 'win' ? 'win' : (b.result === 'loss' ? 'loss' : '');
-    const resolved = b.result ? 'resolved' : '';
-    html += '<div class="shadow-bet ' + cls + ' ' + resolved + '">';
-    html += '<div class="match">' + b.match + '</div>';
-    html += '<div class="mkt">' + b.market + '</div>';
-    html += '<div class="odds">' + b.odds.toFixed(2) + '</div>';
-    if (b.result === 'win') {
-      html += '<div class="result-badge win">WIN</div>';
-    } else if (b.result === 'loss') {
-      html += '<div class="result-badge loss">LOSS</div>';
-    } else {
-      html += '<div class="actions">';
-      html += '<button class="win" onclick="shadowMarkResult(\'' + b.id + '\', \'win\')">V</button>';
-      html += '<button class="loss" onclick="shadowMarkResult(\'' + b.id + '\', \'loss\')">X</button>';
-      html += '</div>';
-    }
-    html += '</div>';
-  });
-
-  box.innerHTML = html;
-}
-
-function shadowRenderReliability(bins) {
-  if (!bins) return '';
-  let html = '<div class="reliability-chart">';
-  html += '<h4>Courbe de fiabilite (predite vs reelle)</h4>';
-  bins.forEach((bin, i) => {
-    if (bin.n === 0) return;
-    const avgP = bin.p / bin.n;
-    const avgO = bin.o / bin.n;
-    const lo = (i * 10) + '%';
-    const hi = ((i + 1) * 10) + '%';
-    html += '<div class="reliability-bar-row">';
-    html += '<div class="label">' + lo + '-' + hi + '</div>';
-    html += '<div class="bar-bg">';
-    html += '<div class="bar-pred" style="width:' + (avgP * 100) + '%"></div>';
-    html += '<div class="bar-real" style="width:' + (avgO * 100) + '%"></div>';
-    html += '</div>';
-    html += '<div class="val">' + (avgO * 100).toFixed(0) + '%/' + (avgP * 100).toFixed(0) + '%</div>';
-    html += '</div>';
-  });
-  html += '<div style="font-size:10px; color:#6e7681; margin-top:8px;">Vert = reelle, Bleu = predite. Si alignees : bien calibre.</div>';
-  html += '</div>';
-  return html;
-}
-
-function shadowExport() {
-  const data = shadowLoad();
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'cornix_shadow_' + new Date().toISOString().slice(0, 10) + '.json';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-/* =========================================================
-   ONLINE TEMPERATURE SCALING
-   ========================================================= */
-function sigmoid(x) {
-  return 1 / (1 + Math.exp(-Math.max(-50, Math.min(50, x))));
-}
-
-function logit(p) {
-  const eps = 1e-9;
-  const pc = Math.max(eps, Math.min(1 - eps, p));
-  return Math.log(pc / (1 - pc));
-}
-
-function fitTemperature(bets) {
-  const resolved = bets.filter(b => b.result === 'win' || b.result === 'loss');
-  if (resolved.length < 10) {
-    return { T: 1.0, n: resolved.length, applied: false };
-  }
-
-  let T = 1.0;
-  const lr = 0.05;
-  const iters = 200;
-
-  for (let it = 0; it < iters; it++) {
-    let grad = 0;
-    resolved.forEach(b => {
-      const logitP = logit(b.prob);
-      const z = logitP / T;
-      const p_cal = sigmoid(z);
-      const y = b.result === 'win' ? 1 : 0;
-      grad += (p_cal - y) * (-logitP / (T * T));
-    });
-    T -= lr * grad / resolved.length;
-    T = Math.max(0.3, Math.min(3.0, T));
-  }
-
-  return { T: T, n: resolved.length, applied: true };
-}
-
-function applyTemperature(prob, T) {
-  if (!T || T === 1.0) return prob;
-  const z = logit(prob) / T;
-  return sigmoid(z);
-}
-
-/* =========================================================
-   INIT + HOOK TEMPERATURE
-   ========================================================= */
-document.addEventListener('DOMContentLoaded', function() {
-  const dateInput = document.querySelector('input[name="date"]');
-  if (dateInput) dateInput.valueAsDate = new Date();
-  generateMCForms();
-  shadowRenderStats();
-  loadBookInfo();
-});
-
-const _origAnalyze = analyze;
-analyze = function(el, p_model, marketId, sport, family, line) {
-  const data = shadowLoad();
-  const metrics = shadowComputeMetrics();
-  if (metrics.n >= 10) {
-    const temp = fitTemperature(data.bets);
-    if (temp.applied) {
-      p_model = applyTemperature(p_model, temp.T);
-    }
-  }
-  _origAnalyze(el, p_model, marketId, sport, family, line);
-};
+                                 }

@@ -457,19 +457,94 @@ details.mc-section > *:not(summary) { margin-left: 18px; margin-right: 18px; }
   left: 0;
 }
 .reliability-bar-row .val { color: #e6edf3; font-family: monospace; }
-.temp-display {
+/* ===== H2H ===== */
+.h2h-header-row {
+  display: grid;
+  grid-template-columns: 30px repeat(8, 1fr);
+  gap: 4px;
+  font-size: 9px;
+  color: #6e7681;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  text-align: center;
+}
+.h2h-header-row > div:first-child { grid-column: 1; }
+.h2h-group-title {
+  grid-column: span 2;
+  text-align: center;
+  color: #58a6ff;
+  font-weight: 600;
+  border-bottom: 1px solid #30363d;
+  padding-bottom: 2px;
+}
+.h2h-subheader-row {
+  display: grid;
+  grid-template-columns: 30px repeat(8, 1fr);
+  gap: 4px;
+  font-size: 10px;
+  color: #6e7681;
+  margin-bottom: 4px;
+}
+.h2h-subheader-row .h2h-sub { text-align: center; }
+.h2h-row {
+  display: grid;
+  grid-template-columns: 30px repeat(8, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.h2h-row .h2h-idx {
+  font-size: 11px;
+  color: #6e7681;
+  text-align: right;
+  padding-top: 6px;
+}
+.h2h-row input {
+  padding: 4px 2px;
+  font-size: 12px;
+  text-align: center;
+}
+/* ===== THE ORACLE ===== */
+#oracle-matches {
+  width: 100%;
+  min-height: 100px;
+  font-family: monospace;
+  font-size: 12px;
   padding: 10px;
+  line-height: 1.6;
   background: #0d1117;
   border: 1px solid #30363d;
   border-radius: 6px;
-  font-size: 12px;
-  color: #8b949e;
-  text-align: center;
-  margin-top: 10px;
+  color: #e6edf3;
 }
-.temp-display .temp-val {
-  color: #d29922;
-  font-weight: 700;
-  font-family: monospace;
-  font-size: 16px;
+#oracle-stage1, #oracle-stage2 {
+  margin-top: 14px;
+}
+.oracle-market {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+  transition: border-color 0.2s;
+}
+.oracle-market:hover {
+  border-color: #58a6ff;
+}
+.oracle-market input.oracle-cote-input {
+  width: 80px;
+  padding: 6px 8px;
+  font-size: 14px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #e6edf3;
+}
+.oracle-market input.oracle-cote-input:focus {
+  outline: none;
+  border-color: #58a6ff;
+}
+.oracle-market .grade-badge {
+  margin-top: 6px;
+  font-size: 11px;
+  padding: 3px 10px;
   }

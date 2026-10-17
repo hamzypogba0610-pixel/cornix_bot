@@ -4,6 +4,8 @@ const VAR_MARKET = 0.12 * 0.12;
 const KELLY_SAFE = 0.25;
 const MAX_TOTAL_STAKE = 0.30;
 const BOOK_KEY = 'cornix_book_v1';
+const H2H_KEY = 'cornix_h2h_v1';
+const H2H_COUNT = 5;
 
 let LAST_MARKETS = [];
 
@@ -52,6 +54,115 @@ function gradeValue(ev, kelly, p_post, p_market) {
 
 function getField(name) {
   return document.querySelector('input[name="' + name + '"]');
+}
+
+function generateH2HGrid() {
+  const body = document.getElementById('h2h-grid-body');
+  if (!body) return;
+  let html = '';
+  for (let i = 0; i < H2H_COUNT; i++) {
+    html += '<div class="h2h-row">';
+    html += '<div class="h2h-idx">#' + (i + 1) + '</div>';
+    html += '<input type="number" min="0" max="20" step="1" data-h2h="' + i + '" data-f="c1mt_1" placeholder="0">';
+    html += '<input type="number" min="0" max="20" step="1" data-h2h="' + i + '" data-f="c1mt_2" placeholder="0">';
+    html += '<input type="number" min="0" max="20" step="1" data-h2h="' + i + '" data-f="c2mt_1" placeholder="0">';
+    html += '<input type="number" min="0" max="20" step="1" data-h2h="' + i + '" data-f="c2mt_2" placeholder="0">';
+    html += '<input type="number" min="0" max="5" step="1" data-h2h="' + i + '" data-f="b1mt_1" placeholder="0">';
+    html += '<input type="number" min="0" max="5" step="1" data-h2h="' + i + '" data-f="b1mt_2" placeholder="0">';
+    html += '<input type="number" min="0" max="5" step="1" data-h2h="' + i + '" data-f="b2mt_1" placeholder="0">';
+    html += '<input type="number" min="0" max="5" step="1" data-h2h="' + i + '" data-f="b2mt_2" placeholder="0">';
+    html += '</div>';
+  }
+  body.innerHTML = html;
+}
+
+function switchH2HTab(tab) {
+  const gridView = document.getElementById('h2h-grid-view');
+  const csvView = document.getElementById('h2h-csv-view');
+  const tabs = document.querySelectorAll('#h2h-section .mc-tab');
+  tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  if (tab === 'grid') {
+    gridView.style.display = '';
+    csvView.style.display = 'none';
+  } else {
+    gridView.style.display = 'none';
+    csvView.style.display = '';
+  }
+}
+
+function collectH2H() {
+  const gridView = document.getElementById('h2h-grid-view');
+  const gridVisible = gridView && gridView.style.display !== 'none';
+  const matches = [];
+
+  if (gridVisible) {
+    for (let i = 0; i < H2H_COUNT; i++) {
+      const inputs = document.querySelectorAll('input[data-h2h="' + i + '"]');
+      const row = {};
+      inputs.forEach(inp => {
+        const v = parseInt(inp.value);
+        if (!isNaN(v) && v >= 0) row[inp.dataset.f] = v;
+      });
+      if (Object.keys(row).length === 8) matches.push(row);
+    }
+  } else {
+    const ta = document.getElementById('h2h-csv');
+    if (ta && ta.value.trim()) {
+      ta.value.trim().split('\n').forEach(line => {
+        const parts = line.split(/[,\t;]+/).map(s => parseFloat(s.trim()));
+        if (parts.length >= 8 && parts.every(p => !isNaN(p) && p >= 0)) {
+          matches.push({
+            c1mt_1: Math.round(parts[0]), c1mt_2: Math.round(parts[1]),
+            c2mt_1: Math.round(parts[2]), c2mt_2: Math.round(parts[3]),
+            b1mt_1: Math.round(parts[4]), b1mt_2: Math.round(parts[5]),
+            b2mt_1: Math.round(parts[6]), b2mt_2: Math.round(parts[7])
+          });
+        }
+      });
+    }
+  }
+
+  return matches.length > 0 ? { matches: matches } : null;
+}
+
+function saveH2H() {
+  const save = document.getElementById('save_h2h');
+  if (!save || !save.checked) return;
+  const h2h = collectH2H();
+  if (!h2h) return;
+  try { localStorage.setItem(H2H_KEY, JSON.stringify(h2h)); } catch (e) {}
+}
+
+function loadH2H() {
+  try {
+    const raw = localStorage.getItem(H2H_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!data.matches) return;
+    data.matches.forEach((m, i) => {
+      if (i >= H2H_COUNT) return;
+      Object.keys(m).forEach(f => {
+        const inp = document.querySelector('input[data-h2h="' + i + '"][data-f="' + f + '"]');
+        if (inp) inp.value = m[f];
+      });
+    });
+  } catch (e) {}
+}
+
+function renderH2HBlock(h2hStats) {
+  if (!h2hStats) return '';
+  let html = '<div class="card"><h2>H2H - 5 dernieres confrontations</h2>';
+  html += '<div class="market-detail">';
+  html += '<b>' + h2hStats.n_matches + ' matchs analyses</b><br><br>';
+  html += 'MC1 H2H : <span>' + h2hStats.mc1_avg.toFixed(2) + '</span><br>';
+  html += 'MC2 H2H : <span>' + h2hStats.mc2_avg.toFixed(2) + '</span><br>';
+  html += 'MC Global H2H : <span>' + h2hStats.mc_global_avg.toFixed(2) + '</span><br><br>';
+  html += 'Corners Eq1 (total) : <span>' + h2hStats.corners1_avg.toFixed(1) + '</span><br>';
+  html += 'Corners Eq2 (total) : <span>' + h2hStats.corners2_avg.toFixed(1) + '</span><br>';
+  html += 'Buts Eq1 : <span>' + h2hStats.goals1_avg.toFixed(1) + '</span><br>';
+  html += 'Buts Eq2 : <span>' + h2hStats.goals2_avg.toFixed(1) + '</span>';
+  html += '</div></div>';
+  return html;
 }
 
 function analyze(el, p_model, marketId, sport, family, line) {
@@ -361,6 +472,7 @@ function submitForm(e) {
   e.preventDefault();
   LAST_MARKETS = [];
   saveBookInfo();
+  saveH2H();
 
   const homeF = getField('home');
   const awayF = getField('away');
@@ -377,6 +489,7 @@ function submitForm(e) {
     league: leagueF ? leagueF.value : 'E0',
     date: dateF ? dateF.value : null,
     n_simulations: simsF ? parseInt(simsF.value) : 5000,
+    h2h: collectH2H(),
   };
 
   const o1 = o1F ? parseFloat(o1F.value) : NaN;
@@ -442,6 +555,8 @@ function submitForm(e) {
       html += '</div>';
     }
     html += '</div>';
+
+    html += renderH2HBlock(d.h2h_stats);
 
     html += '<div class="card"><h2>Technique</h2>';
     html += '<div class="market-detail">';
@@ -760,9 +875,7 @@ function shadowLoad() {
   try {
     const raw = localStorage.getItem(SHADOW_KEY);
     return raw ? JSON.parse(raw) : { bets: [] };
-  } catch (e) {
-    return { bets: [] };
-  }
+  } catch (e) { return { bets: [] }; }
 }
 
 function shadowSave(data) {
@@ -779,23 +892,18 @@ function shadowSaveCurrent() {
   const home = homeF ? homeF.value : '?';
   const away = awayF ? awayF.value : '?';
   const data = shadowLoad();
-
   let count = 0;
   LAST_MARKETS.forEach(m => {
     if (m.odds && m.odds > 1) {
       data.bets.push({
         id: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
         match: home + ' vs ' + away,
-        market: m.market_id,
-        prob: m.prob,
-        odds: m.odds,
-        date: new Date().toISOString(),
-        result: null
+        market: m.market_id, prob: m.prob, odds: m.odds,
+        date: new Date().toISOString(), result: null
       });
       count++;
     }
   });
-
   shadowSave(data);
   shadowRenderStats();
   alert(count + ' pari(s) enregistre(s) dans Shadow.');
@@ -819,7 +927,6 @@ function shadowComputeMetrics() {
   let wins = 0, losses = 0, profit = 0, totalStake = 0;
   const bins = [];
   for (let i = 0; i < 10; i++) bins.push({ p: 0, o: 0, n: 0 });
-
   resolved.forEach(b => {
     totalStake += 1;
     const isWin = b.result === 'win';
@@ -830,7 +937,6 @@ function shadowComputeMetrics() {
     bins[binIdx].o += isWin ? 1 : 0;
     bins[binIdx].n += 1;
   });
-
   let ece = 0;
   bins.forEach(bin => {
     if (bin.n > 0) {
@@ -839,7 +945,6 @@ function shadowComputeMetrics() {
       ece += (bin.n / resolved.length) * Math.abs(avgP - avgO);
     }
   });
-
   return {
     n: resolved.length, wins: wins, losses: losses,
     winRate: wins / resolved.length,
@@ -852,19 +957,16 @@ function shadowRenderStats() {
   if (!box) return;
   const data = shadowLoad();
   const m = shadowComputeMetrics();
-
   let html = '';
   if (data.bets.length === 0) {
     html = '<div class="shadow-empty">Aucun pari enregistre.</div>';
     box.innerHTML = html;
     return;
   }
-
   if (m.n > 0) {
     const roiClass = m.roi > 0 ? 'good' : (m.roi < 0 ? 'bad' : 'neutral');
     const wrClass = m.winRate > 0.55 ? 'good' : (m.winRate < 0.45 ? 'bad' : 'neutral');
     const eceClass = m.ece < 0.05 ? 'good' : (m.ece > 0.10 ? 'bad' : 'neutral');
-
     html += '<div class="shadow-stats-grid">';
     html += '<div class="k">Paris resolus :</div><div class="v">' + m.n + '</div>';
     html += '<div class="k">Gagnes :</div><div class="v good">' + m.wins + '</div>';
@@ -877,7 +979,6 @@ function shadowRenderStats() {
     html += '</div>';
     html += shadowRenderReliability(m.bins);
   }
-
   html += '<div style="margin-top:12px; font-size:12px; color:#8b949e; text-transform:uppercase; letter-spacing:0.5px;">Derniers paris</div>';
   const recent = [].concat(data.bets).reverse().slice(0, 15);
   recent.forEach(b => {
@@ -949,7 +1050,6 @@ function logit(p) {
 function fitTemperature(bets) {
   const resolved = bets.filter(b => b.result === 'win' || b.result === 'loss');
   if (resolved.length < 10) return { T: 1.0, n: resolved.length, applied: false };
-
   let T = 1.0;
   const lr = 0.05, iters = 200;
   for (let it = 0; it < iters; it++) {
@@ -974,14 +1074,16 @@ function applyTemperature(prob, T) {
 }
 
 /* =========================================================
-   INIT
+   INIT + HOOK
    ========================================================= */
 document.addEventListener('DOMContentLoaded', function() {
   const dateInput = document.querySelector('input[name="date"]');
   if (dateInput) dateInput.valueAsDate = new Date();
   generateMCForms();
+  generateH2HGrid();
   shadowRenderStats();
   loadBookInfo();
+  loadH2H();
 });
 
 const _origAnalyze = analyze;

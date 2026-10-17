@@ -68,6 +68,30 @@ function logit(p) {
   return Math.log(pc / (1 - pc));
 }
 
+function matrixInvert(M) {
+  const n = M.length;
+  const A = M.map((r, i) => r.concat(Array(n).fill(0).map((_, j) => i === j ? 1 : 0)));
+  for (let i = 0; i < n; i++) {
+    let pivot = i;
+    for (let j = i + 1; j < n; j++)
+      if (Math.abs(A[j][i]) > Math.abs(A[pivot][i])) pivot = j;
+    const tmp = A[i]; A[i] = A[pivot]; A[pivot] = tmp;
+    if (Math.abs(A[i][i]) < 1e-12) return null;
+    const piv = A[i][i];
+    for (let j = 0; j < 2 * n; j++) A[i][j] /= piv;
+    for (let k = 0; k < n; k++) {
+      if (k === i) continue;
+      const f = A[k][i];
+      for (let j = 0; j < 2 * n; j++) A[k][j] -= f * A[i][j];
+    }
+  }
+  return A.map(r => r.slice(n));
+}
+
+function matrixMulVec(M, v) {
+  return M.map(row => row.reduce((s, x, i) => s + x * v[i], 0));
+}
+
 function analyze(el, p_model, marketId, sport, family, line) {
   const market = el.closest('.market');
   const verdict = el.parentElement.querySelector('.verdict');
@@ -175,31 +199,7 @@ function correlationHeuristic(m1, m2) {
   if (sameFam && sameDir) return 0.55;
   if (sameFam) return 0.10;
   return 0.05;
-}
-
-function matrixInvert(M) {
-  const n = M.length;
-  const A = M.map((r, i) => r.concat(Array(n).fill(0).map((_, j) => i === j ? 1 : 0)));
-  for (let i = 0; i < n; i++) {
-    let pivot = i;
-    for (let j = i + 1; j < n; j++)
-      if (Math.abs(A[j][i]) > Math.abs(A[pivot][i])) pivot = j;
-    const tmp = A[i]; A[i] = A[pivot]; A[pivot] = tmp;
-    if (Math.abs(A[i][i]) < 1e-12) return null;
-    const piv = A[i][i];
-    for (let j = 0; j < 2 * n; j++) A[i][j] /= piv;
-    for (let k = 0; k < n; k++) {
-      if (k === i) continue;
-      const f = A[k][i];
-      for (let j = 0; j < 2 * n; j++) A[k][j] -= f * A[i][j];
-    }
-  }
-  return A.map(r => r.slice(n));
-}
-
-function matrixMulVec(M, v) {
-  return M.map(row => row.reduce((s, x, i) => s + x * v[i], 0));
-}
+      }
 
 
 function computePortfolio() {
@@ -588,7 +588,7 @@ function submitForm(e) {
   .catch(err => {
     result.innerHTML = '<div class="card" style="color:#f85149">Erreur reseau : ' + err.message + '</div>';
   });
-         }
+    }
 
 
 const MC_BLOCKS = [
@@ -597,6 +597,66 @@ const MC_BLOCKS = [
   { id: 'mc2e', label: 'Eq2 - 10 matchs a l EXTERIEUR', team: 2, n: 10 },
   { id: 'mc2g', label: 'Eq2 - 5 matchs GLOBAUX', team: 2, n: 5 }
 ];
+
+function poissonSampleFast(lam, randFn) {
+  if (lam <= 0) return 0;
+  if (lam > 20) {
+    const u1 = Math.max(1e-9, randFn());
+    const u2 = randFn();
+    const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    return Math.max(0, Math.round(lam + Math.sqrt(lam) * z));
+  }
+  const L = Math.exp(-lam);
+  let k = 0, p = 1;
+  do { k++; p *= randFn(); } while (p > L);
+  return k - 1;
+}
+
+function simulateLatentFusion(lam_H1, lam_H2, lam_A1, lam_A2, nSims, seed) {
+  const A_COEFF = 0.20;
+  let s = seed || 12345;
+  const rand = () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
+  const randn = () => {
+    const u1 = Math.max(1e-9, rand());
+    const u2 = rand();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  };
+
+  const mc1 = [];
+  const mc2 = [];
+  const mcGlobal = [];
+
+  for (let i = 0; i < nSims; i++) {
+    const U = randn();
+    const factor = Math.exp(A_COEFF * U);
+    const H1 = poissonSampleFast(lam_H1 * factor, rand);
+    const H2 = poissonSampleFast(lam_H2 * factor, rand);
+    const A1 = poissonSampleFast(lam_A1 * factor, rand);
+    const A2 = poissonSampleFast(lam_A2 * factor, rand);
+    const m1 = H1 * H2;
+    const m2 = A1 * A2;
+    mc1.push(m1);
+    mc2.push(m2);
+    mcGlobal.push(m1 + m2);
+  }
+
+  const exp2a2 = Math.exp(2 * A_COEFF * A_COEFF);
+  const E_MC1 = lam_H1 * lam_H2 * exp2a2;
+  const E_MC2 = lam_A1 * lam_A2 * exp2a2;
+
+  return {
+    mc1: mc1,
+    mc2: mc2,
+    mcGlobal: mcGlobal,
+    a_coeff: A_COEFF,
+    E_MC1_analytic: E_MC1,
+    E_MC2_analytic: E_MC2,
+    E_MCglobal_analytic: E_MC1 + E_MC2
+  };
+}
 
 function generateMCForms() {
   const container = document.getElementById('mc-forms');
@@ -705,33 +765,6 @@ function computeStats(pairs) {
   };
 }
 
-function simulateBivariate(mean1, mean2, std1, std2, rho, nSims, seed) {
-  const samples = [];
-  const s1 = Math.max(std1, 0.5);
-  const s2 = Math.max(std2, 0.5);
-  let s = seed || 12345;
-  const rand = () => {
-    s = (s * 1103515245 + 12345) & 0x7fffffff;
-    return s / 0x7fffffff;
-  };
-  const randn = () => {
-    const u1 = Math.max(1e-9, rand());
-    const u2 = rand();
-    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-  };
-  const rho_c = Math.max(-0.95, Math.min(0.95, rho));
-  const a = Math.sqrt(1 - rho_c * rho_c);
-  for (let i = 0; i < nSims; i++) {
-    const z1 = randn();
-    const z2 = rho_c * z1 + a * randn();
-    let a1 = Math.round(mean1 + s1 * z1);
-    let a2 = Math.round(mean2 + s2 * z2);
-    if (a1 < 0) a1 = 0;
-    if (a2 < 0) a2 = 0;
-    samples.push(a1 * a2);
-  }
-  return samples;
-}
 
 function mcProbabilities(samples) {
   const sorted = [].concat(samples).sort((a, b) => a - b);
@@ -852,6 +885,7 @@ function computeMultiCorner() {
   const stats2 = s2e || s2g;
   const n1 = data['mc1d'].pairs.length || data['mc1g'].pairs.length;
   const n2 = data['mc2e'].pairs.length || data['mc2g'].pairs.length;
+
   let coherenceWarn = '';
   if (s1d && s1g && Math.abs(s1d.meanProduct - s1g.meanProduct) / Math.max(1, s1g.meanProduct) > 0.30) {
     coherenceWarn += '<div class="corr-warning">Eq1 : ecart > 30% entre domicile et global</div>';
@@ -859,23 +893,47 @@ function computeMultiCorner() {
   if (s2e && s2g && Math.abs(s2e.meanProduct - s2g.meanProduct) / Math.max(1, s2g.meanProduct) > 0.30) {
     coherenceWarn += '<div class="corr-warning">Eq2 : ecart > 30% entre exterieur et global</div>';
   }
+
   const N_SIMS = 10000;
-  const mc1 = simulateBivariate(stats1.mean1, stats1.mean2, stats1.std1, stats1.std2, stats1.rho, N_SIMS, 42);
-  const mc2 = simulateBivariate(stats2.mean1, stats2.mean2, stats2.std1, stats2.std2, stats2.rho, N_SIMS, 43);
-  const mcGlobal = mc1.map((v, i) => v + mc2[i]);
+  const fusion = simulateLatentFusion(
+    stats1.mean1, stats1.mean2,
+    stats2.mean1, stats2.mean2,
+    N_SIMS, 42
+  );
+  const mc1 = fusion.mc1;
+  const mc2 = fusion.mc2;
+  const mcGlobal = fusion.mcGlobal;
+
+  const emp_MC1 = mc1.reduce((a, b) => a + b, 0) / mc1.length;
+  const emp_MC2 = mc2.reduce((a, b) => a + b, 0) / mc2.length;
+  const emp_MCglobal = mcGlobal.reduce((a, b) => a + b, 0) / mcGlobal.length;
+
   let html = '<div class="card">';
   html += '<h2>Resultats Multi-Corner</h2>';
-  html += '<div class="mc-result-detail" style="margin-bottom:12px;">';
-  html += 'Eq1 : ' + n1 + ' matchs (rho=' + stats1.rho.toFixed(2) + ', P(0)=' + (stats1.zeroCount / stats1.n * 100).toFixed(0) + '%)<br>';
-  html += 'Eq2 : ' + n2 + ' matchs (rho=' + stats2.rho.toFixed(2) + ', P(0)=' + (stats2.zeroCount / stats2.n * 100).toFixed(0) + '%)';
+  html += '<div style="font-size:11px; color:#6e7681; margin-bottom:10px;">';
+  html += 'Modele : Poisson + facteur latent U (a=' + fusion.a_coeff.toFixed(2) + ')';
   html += '</div>';
+  html += '<div class="mc-result-detail" style="margin-bottom:12px;">';
+  html += 'Eq1 : ' + n1 + ' matchs (P(0)=' + (stats1.zeroCount / stats1.n * 100).toFixed(0) + '%)<br>';
+  html += 'Eq2 : ' + n2 + ' matchs (P(0)=' + (stats2.zeroCount / stats2.n * 100).toFixed(0) + '%)';
+  html += '</div>';
+
+  html += '<div style="padding:10px; background:#0a0d12; border:1px solid #30363d; border-radius:6px; margin-bottom:12px; font-size:12px; color:#8b949e;">';
+  html += '<b style="color:#58a6ff;">E[MC] analytique vs empirique</b><br>';
+  html += 'MC1 : <span style="color:#e6edf3;">' + fusion.E_MC1_analytic.toFixed(2) + '</span> vs ' + emp_MC1.toFixed(2) + ' (sim)<br>';
+  html += 'MC2 : <span style="color:#e6edf3;">' + fusion.E_MC2_analytic.toFixed(2) + '</span> vs ' + emp_MC2.toFixed(2) + ' (sim)<br>';
+  html += 'MC Global : <span style="color:#e6edf3;">' + fusion.E_MCglobal_analytic.toFixed(2) + '</span> vs ' + emp_MCglobal.toFixed(2) + ' (sim)';
+  html += '</div>';
+
   if (coherenceWarn) html += coherenceWarn;
   html += renderMCBlock('MC Equipe 1 = A1 x A2', mc1, 'T1');
   html += renderMCBlock('MC Equipe 2 = B1 x B2', mc2, 'T2');
   html += renderMCBlock('MC Global = MC1 + MC2', mcGlobal, 'GLOBAL');
   html += '</div>';
+
   box.innerHTML = html;
-}
+                         }
+
 
 function shadowLoad() {
   try {
@@ -1038,7 +1096,7 @@ function shadowExport() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-}
+      }
 
 
 function fitTemperature(bets) {

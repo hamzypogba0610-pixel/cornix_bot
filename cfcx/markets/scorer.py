@@ -6,19 +6,18 @@ from cfcx.markets.metrics import (
 
 
 DEFAULT_WEIGHTS = {
-    "w_p": 0.40,
-    "w_edge": 1.00,
-    "w_rob": 0.50,
-    "w_cons": 0.30,
-    "w_dq": 0.20,
-    "w_ls": 0.20,
-    "w_fi": 0.50,
-    "w_mdi": 0.40,
+    "w_p": 0.20,
+    "w_edge": 1.50,
+    "w_rob": 0.30,
+    "w_cons": 0.20,
+    "w_dq": 0.15,
+    "w_ls": 0.15,
+    "w_fi": 0.40,
+    "w_mdi": 0.30,
 }
 
 
 def _edge(prob_calibrated: float, prob_raw: float) -> float:
-    """Edge = différence entre notre estimation calibrée et la brute."""
     return float(prob_calibrated - prob_raw)
 
 
@@ -30,13 +29,11 @@ def score_market(market: dict,
                  completeness: float,
                  line_dist: np.ndarray | None = None,
                  weights: dict | None = None) -> dict:
-    """Calcule le score complet d'un marché."""
     if weights is None:
         weights = DEFAULT_WEIGHTS
 
     p_cal = market["prob"]
     p_raw = market.get("prob_raw", p_cal)
-
     edge_val = _edge(p_cal, p_raw)
 
     mdi_val = mdi(probabilities_by_model)
@@ -76,21 +73,16 @@ def score_market(market: dict,
 
 
 def rank_markets(scored_markets: list[dict]) -> list[dict]:
-    """Trie les marchés par score décroissant."""
     return sorted(scored_markets, key=lambda m: m["score"], reverse=True)
 
 
 def market_dominance(ranked: list[dict]) -> dict:
-    """Calcule MDS et MDR entre le top 1 et le top 2."""
     if len(ranked) < 2:
         return {"mds": 0.0, "mdr": 0.0, "top1": None, "top2": None}
-
     s1 = ranked[0]["score"]
     s2 = ranked[1]["score"]
-
     mds = s1 - s2
     mdr = (s1 - s2) / (abs(s1) + 1e-9)
-
     return {
         "mds": float(mds),
         "mdr": float(mdr),
@@ -100,17 +92,9 @@ def market_dominance(ranked: list[dict]) -> dict:
 
 
 def group_by_family(ranked: list[dict]) -> dict:
-    """Regroupe les marchés par famille (corners + buts)."""
     groups = {
-        # Corners
-        "team1": [],
-        "team2": [],
-        "total": [],
-        "multicorner": [],
-        # Buts
-        "result": [],
-        "goals_total": [],
-        "handicap": [],
+        "team1": [], "team2": [], "total": [], "multicorner": [],
+        "result": [], "goals_total": [], "handicap": [],
     }
     for m in ranked:
         fam = m.get("family")
@@ -120,6 +104,5 @@ def group_by_family(ranked: list[dict]) -> dict:
 
 
 def best_per_family(ranked: list[dict]) -> dict:
-    """Retourne le meilleur marché de chaque famille."""
     groups = group_by_family(ranked)
     return {fam: (lst[0] if lst else None) for fam, lst in groups.items()}

@@ -12,6 +12,29 @@ FORM_HTML = """
   <h1>Cornix</h1>
   <p class="sub">Multi-Corner 360 Ultimate — Kelly-Bayesian Portfolio Engine</p>
 
+  <details class="mc-section" id="oracle-section">
+    <summary>THE ORACLE — Analyse multi-matchs (magie)</summary>
+    <p class="mc-hint" style="margin-top:0; margin-bottom:14px;">
+      Colle une liste de matchs, saisis les cotes 1X2, et l'Oracle analyse tout.
+      Il te sort le TOP 5 des paris du jour + le portefeuille optimal multi-match.
+    </p>
+
+    <label>Format CSV (1 match par ligne)</label>
+    <textarea id="oracle-matches" class="mc-csv-area" style="min-height:100px;"
+      placeholder="Liverpool,Everton,E0,2026-10-18,1.45,4.20,6.50
+Arsenal,Chelsea,E0,2026-10-18,2.10,3.40,3.60
+Real,Barca,SP1,2026-10-18,2.50,3.20,2.80"></textarea>
+    <div class="mc-hint">
+      Format : Eq1,Eq2,Championnat,Date,CoteEq1,CoteNul,CoteEq2
+    </div>
+
+    <button type="button" class="tertiary" onclick="oracleRun()" style="margin-top:12px;">
+      LANCER L'ORACLE
+    </button>
+    <div id="oracle-stage1"></div>
+    <div id="oracle-stage2"></div>
+  </details>
+
   <form id="form" onsubmit="submitForm(event)">
     <div class="card">
       <h2>Match</h2>
@@ -128,9 +151,7 @@ FORM_HTML = """
 
       <div id="h2h-csv-view" style="display:none;">
         <textarea id="h2h-csv" class="mc-csv-area" style="min-height:120px;"
-          placeholder="Format par ligne : C1MT-Eq1, C1MT-Eq2, C2MT-Eq1, C2MT-Eq2, B1MT-Eq1, B1MT-Eq2, B2MT-Eq1, B2MT-Eq2
-Exemple :
-3,2,4,3,1,0,1,1"></textarea>
+          placeholder="Format : C1MT_Eq1, C1MT_Eq2, C2MT_Eq1, C2MT_Eq2, B1MT_Eq1, B1MT_Eq2, B2MT_Eq1, B2MT_Eq2"></textarea>
         <div class="mc-hint">1 ligne = 1 match. 8 valeurs separees par virgules.</div>
       </div>
 
@@ -188,7 +209,7 @@ Exemple :
   <div class="footnote">
     Kelly-Bayesian Portfolio Engine — fusion bayesienne + de-marginalisation + Kelly multi-actifs<br>
     Calibrateurs : corners (9154 paires) et buts (3327 paires) — Isotonic.<br>
-    Shadow + Online Temperature Scaling + H2H : calibration continue.
+    Shadow + Online Temperature Scaling + H2H + The Oracle.
   </div>
 </div>
 <script src="/static/app.js"></script>

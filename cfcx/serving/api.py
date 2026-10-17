@@ -1,5 +1,6 @@
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -12,7 +13,7 @@ from cfcx.pipeline import run as run_pipeline
 from cfcx.serving.templates import FORM_HTML
 
 
-app = FastAPI(title="CFC-X API", version="0.3.0")
+app = FastAPI(title="CFC-X API", version="0.4.0")
 START_TIME = datetime.now(UTC)
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -30,6 +31,7 @@ class PredictRequest(BaseModel):
     odds_1: float | None = None
     odds_x: float | None = None
     odds_2: float | None = None
+    h2h: dict[str, Any] | None = None
 
 
 def _parse_date(s: str | None) -> date:
@@ -106,7 +108,6 @@ def predict(req: PredictRequest):
             detail="Format de date invalide (attendu YYYY-MM-DD)",
         )
 
-    # Construire le dict odds_1x2 si les 3 cotes sont fournies
     odds_1x2 = None
     if req.odds_1 and req.odds_x and req.odds_2:
         if req.odds_1 > 1 and req.odds_x > 1 and req.odds_2 > 1:
@@ -115,6 +116,10 @@ def predict(req: PredictRequest):
                 "odds_x": req.odds_x,
                 "odds_2": req.odds_2,
             }
+
+    h2h_data = None
+    if req.h2h and isinstance(req.h2h, dict) and req.h2h.get("matches"):
+        h2h_data = req.h2h
 
     s = make_session()
     try:
@@ -127,6 +132,7 @@ def predict(req: PredictRequest):
             n_simulations=req.n_simulations,
             seed=req.seed,
             odds_1x2=odds_1x2,
+            h2h=h2h_data,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -154,4 +160,5 @@ def predict(req: PredictRequest):
         "dominance": result.get("dominance", {}),
         "boost1": result.get("boost1", 1.0),
         "boost2": result.get("boost2", 1.0),
-    }
+        "h2h_stats": result.get("h2h_stats"),
+        }
